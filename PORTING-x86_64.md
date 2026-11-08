@@ -286,9 +286,9 @@ OK`), `meson test -C build-meson` зелёный, `ninja -C build-meson` без 
 
 ## Открытые вопросы
 
-- **Какую TLS-модель реально выберёт clang для `-fPIC` `clibc.so`** — от этого
-  зависит, какие из `DTPMOD64`/`DTPOFF64`/`GOTTPOFF` реально попадут в
-  `.rela.dyn`. Проверяется `readelf -r` на собранной цели, а не рассуждением.
+- **TLS-модели `-fPIC`-объектов** — вопрос закрыт фикстурами Фазы 5:
+  `R_X86_64_TPOFF64` для initial-exec, пара `DTPMOD64`/`DTPOFF64` для
+  general-dynamic. Проверено `readelf -r`, а не рассуждением.
 - **`cact_sign`/`cctkfs`** — libc не собирает `.cctk`; порт модулей — сторона
   ядра и драйверов.
 - **Общие с соседями заголовки** (`dl_objects.h`, `tls_layout.h`) — по одному
