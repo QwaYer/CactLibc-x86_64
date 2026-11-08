@@ -46,6 +46,12 @@ typedef int32_t  s32;
 #define LDSO_MAX_OBJS   8
 #define LDSO_MAX_NEEDED 16
 #define LDSO_SCRATCH    0x400000u   /* 4 MiB file scratch (cctkfs libs are << 1 MiB) */
+/* Where the file scratch is mapped: below the kernel's mmap window
+ * (MMAP_BASE = 0x80000000) and above every library's fixed address
+ * (main 0x08000000, libc 0x10000000, ld.so 0x18000000), so it can never overlap
+ * an image.  Mapped MAP_FIXED so the address is a property of ld.so rather than
+ * of whatever the kernel's bump allocator happens to hand out. */
+#define LDSO_SCRATCH_BASE 0x30000000u
 
 long ldso_sc(unsigned long num, unsigned long a1, unsigned long a2, unsigned long a3);
 void ldso_die(void);

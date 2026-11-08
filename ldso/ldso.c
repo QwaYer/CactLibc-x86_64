@@ -444,9 +444,9 @@ static int load_library(const char* name)
     cap = LDSO_SCRATCH;
     {
         ld_mmap_args_t sargs;
-        sargs.addr = 0; sargs.length = cap;
+        sargs.addr = LDSO_SCRATCH_BASE; sargs.length = cap;
         sargs.prot = PROT_READ | PROT_WRITE;
-        sargs.flags = MAP_PRIVATE | MAP_ANON;
+        sargs.flags = MAP_PRIVATE | MAP_ANON | MAP_FIXED;
         sargs.fd = -1; sargs.offset = 0;
         buf = (u8*)ldso_sc(SYS_MMAP, (unsigned long)&sargs, 0, 0);
     }
