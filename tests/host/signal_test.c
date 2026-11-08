@@ -10,8 +10,8 @@
 #include <string.h>
 #include <stdint.h>
 
-/* The libc's <signal.h> cannot be included here: it pulls in its own <unistd.h>,
- * whose 32-bit ssize_t/off_t collide with the system headers.  These mirror the
+/* The libc's <signal.h> cannot be included here: its sigset_t is a 32-bit mask
+ * and glibc's is a 1024-bit array, so the two would collide.  These mirror the
  * parts this test uses — and the struct's field order *is* the contract the test
  * is checking, so a drift in the header shows up as a failure. */
 typedef uint32_t sigset_t;
@@ -71,12 +71,22 @@ int *cact_host_errno_ptr(void);
 static int  host_errno(void)      { return *cact_host_errno_ptr(); }
 static void errno_reset(void)     { *cact_host_errno_ptr() = 0; }
 
-static uint32_t a32(int i) {
-    return (uint32_t)cact_host_ctl_arg[i * 4]
-         | ((uint32_t)cact_host_ctl_arg[i * 4 + 1] << 8)
-         | ((uint32_t)cact_host_ctl_arg[i * 4 + 2] << 16)
-         | ((uint32_t)cact_host_ctl_arg[i * 4 + 3] << 24);
+/* The recorded argument, read at byte offsets: the wire structs mix widths
+ * (cact_sigaction_arg_t has a uint32 signum, a uint64 handler and two uint32s,
+ * so the fields are not at 4-byte multiples of each other any more). */
+static uint32_t u32_at(int off) {
+    return (uint32_t)cact_host_ctl_arg[off]
+         | ((uint32_t)cact_host_ctl_arg[off + 1] << 8)
+         | ((uint32_t)cact_host_ctl_arg[off + 2] << 16)
+         | ((uint32_t)cact_host_ctl_arg[off + 3] << 24);
 }
+
+static uint64_t u64_at(int off) {
+    return (uint64_t)u32_at(off) | ((uint64_t)u32_at(off + 4) << 32);
+}
+
+/* The all-32-bit wire structs (sigwait, sigqueue) still index by word. */
+#define a32(i) u32_at((i) * 4)
 
 int main(void) {
     struct sigaction act;
@@ -90,11 +100,12 @@ int main(void) {
     int r = cact_sigaction(SIGINT, &act, 0);
     checks++;
     if (r != 0 || cact_host_ctl_calls != 1 || cact_host_ctl_cmd != CACT_PROCCTL_SIGACTION ||
-        a32(0) != (uint32_t)SIGINT || a32(1) != (uint32_t)(uintptr_t)h_plain ||
-        a32(2) != (uint32_t)SA_ONSTACK || a32(3) != 0x42u) {
+        u32_at(0) != (uint32_t)SIGINT || u64_at(8) != (uint64_t)(uintptr_t)h_plain ||
+        u32_at(16) != (uint32_t)SA_ONSTACK || u32_at(20) != 0x42u) {
         fails++;
-        printf("FAIL sigaction: r=%d calls=%d cmd=%#lx signum=%u handler=%#x flags=%#x mask=%#x\n",
-               r, cact_host_ctl_calls, cact_host_ctl_cmd, a32(0), a32(1), a32(2), a32(3));
+        printf("FAIL sigaction: r=%d calls=%d cmd=%#lx signum=%u handler=%#lx flags=%#x mask=%#x\n",
+               r, cact_host_ctl_calls, cact_host_ctl_cmd, u32_at(0),
+               (unsigned long)u64_at(8), u32_at(16), u32_at(20));
     }
 
     /* SA_SIGINFO with both pointers set picks sa_sigaction, not sa_handler. */
@@ -105,11 +116,11 @@ int main(void) {
     act.sa_mask      = 0x1234;
     cact_sigaction(SIGQUIT, &act, 0);
     checks++;
-    if (a32(0) != (uint32_t)SIGQUIT || a32(1) != (uint32_t)(uintptr_t)h_info ||
-        a32(2) != (uint32_t)(SA_SIGINFO | SA_NODEFER) || a32(3) != 0x1234u) {
+    if (u32_at(0) != (uint32_t)SIGQUIT || u64_at(8) != (uint64_t)(uintptr_t)h_info ||
+        u32_at(16) != (uint32_t)(SA_SIGINFO | SA_NODEFER) || u32_at(20) != 0x1234u) {
         fails++;
-        printf("FAIL SA_SIGINFO: signum=%u handler=%#x flags=%#x mask=%#x\n",
-               a32(0), a32(1), a32(2), a32(3));
+        printf("FAIL SA_SIGINFO: signum=%u handler=%#lx flags=%#x mask=%#x\n",
+               u32_at(0), (unsigned long)u64_at(8), u32_at(16), u32_at(20));
     }
 
     /* Without SA_SIGINFO the plain handler is used even if sa_sigaction is set. */
@@ -119,9 +130,10 @@ int main(void) {
     act.sa_mask      = 0;
     cact_sigaction(SIGINT, &act, 0);
     checks++;
-    if (a32(1) != (uint32_t)(uintptr_t)h_plain) {
+    if (u64_at(8) != (uint64_t)(uintptr_t)h_plain) {
         fails++;
-        printf("FAIL no SA_SIGINFO: handler=%#x want %#x\n", a32(1), (uint32_t)(uintptr_t)h_plain);
+        printf("FAIL no SA_SIGINFO: handler=%#lx want %#lx\n",
+               (unsigned long)u64_at(8), (unsigned long)(uintptr_t)h_plain);
     }
 
     /* A NULL disposition is rejected in the libc, without reaching the kernel. */

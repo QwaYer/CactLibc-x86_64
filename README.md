@@ -210,11 +210,11 @@ Additionally **`dns_resolve(const char *name, uint32_t *out_ip_host)`** wraps **
 | **`wordexp.h`** | `wordexp` `wordfree` — quoting, escapes, `$VAR`, `${name:-x}`/`:+`/`:=`/`#`/`%`/`${#name}`, arithmetic `$((…))`, `~`, `$(…)`/backticks and pathname expansion |
 | **`locale.h`** | `setlocale` `localeconv` — no locale data ships, so only `"C"` is selectable (and `printf`'s `'` flag is therefore inert) |
 | **`errno.h`** | `errno` is a **macro over `__errno_location()`** — per thread (see below) |
-| **`sys/ldt.h`** | `set_thread_area` (+ `struct user_desc`) — installs the task's `%gs` base directly; CactOS has no LDT, so the rest of the descriptor is ignored |
+| **`sys/ldt.h`** | `set_thread_area` (+ `struct user_desc`) — installs the task's `%fs` base directly; CactOS has no LDT, so the rest of the descriptor is ignored |
 | **`tls_layout.h`** | the static TLS layout ld.so computes and the libc fills per thread (`cact_tls_layout_t`, `cact_tls_plan`, plus the `cact_tls_reserve`/`cact_tls_take` spare room an object loaded later draws from) — internal contract between the two, not for programs |
 | **`dlfcn.h`** | `dlopen` `dlsym` `dlvsym` `dlclose` `dlerror` `dladdr` (+ `Dl_info`) and `RTLD_LAZY`/`NOW`/`GLOBAL`/`LOCAL`/`DEFAULT`/`NEXT` — a real runtime loader (see below) |
 | **`link.h`** | `dl_iterate_phdr` (+ `struct dl_phdr_info`). `dlpi_addr` is always 0 (no load bias) and the program headers are the loader's own copies, because a CactOS image's ELF header is not mapped. The program is named `<main>` where glibc uses `""` |
-| **`dl_elf.h`** | the ELF32 shapes and PT_/DT_/R_386_ constants the two loaders share (a program reaches them through `link.h`, which needs `Elf32_Phdr`) |
+| **`dl_elf.h`** | the ELF64 shapes and PT_/DT_/R_X86_64_ constants the two loaders share (a program reaches them through `link.h`, which needs `Elf64_Phdr`) |
 | **`dl_objects.h`** | the already-mapped-object table ld.so publishes and the libc extends — internal to the two loaders |
 | **`shm.h`** | `shmget`, `shmat`, `shmdt`, `shmctl` |
 | **`time.h`** | `gettimeofday`, `clock_gettime` (**`CLOCK_REALTIME`** from the RTC via `/proc/wallclock`; **`CLOCK_MONOTONIC`** from `/proc/time`), `clock_settime` (**`CLOCK_REALTIME`** only, root), `nanosleep`, `tzset` + `tzname`/`timezone`/`daylight`, `strftime`/`strptime` (C locale, `TZ`-aware `%Z`/`%z`) |
@@ -256,11 +256,11 @@ struct block_header {
 
 ## 🧪 Tests
 
-`tests/` holds an in-tree host suite: the shipped `src/*.c` compiled for the build machine with its entry points renamed and its `errno` redirected (`tests/host/rename_*.h`, `tests/host/shim.c`), then compared with glibc/libm — the `printf`, `math`, `wordexp`, `time`, `thread_local`, `signal`, `tz`, `tls`, `semaphore`, `dlfcn`, `strftime`, `glob`, `sched`, `spawn`, `atfork`, `pthread`, `shm_open` and `mqueue` units today. The `dlfcn` one builds i686 plugins with `ld` and drives the real loader against them, reading the mapped memory back (two of them carry a `__thread` of their own — one initial-exec, one general-dynamic — and one exists only to be loaded into a namespace of its own); the `glob` one builds a real directory tree in a temp dir and checks every flag against glibc's `glob()` on the same tree; the `spawn` one really forks and execs `/bin/true`, so a refused scheduling policy is seen as the parent's `posix_spawn()` returning the error. Run it with `tests/run-host.sh`, or `meson test -C build-meson`. The kernel keeps its own host unit tests and headless `check`.
+`tests/` holds an in-tree host suite: the shipped `src/*.c` compiled for the build machine with its entry points renamed and its `errno` redirected (`tests/host/rename_*.h`, `tests/host/shim.c`), then compared with glibc/libm — the `printf`, `math`, `wordexp`, `time`, `thread_local`, `signal`, `tz`, `tls`, `semaphore`, `dlfcn`, `strftime`, `glob`, `sched`, `spawn`, `atfork`, `pthread`, `shm_open` and `mqueue` units today. The `dlfcn` one builds x86_64 plugins (`-m elf_x86_64 -fPIC`) with `ld` and drives the real loader against them, reading the mapped memory back (two of them carry a `__thread` of their own — one initial-exec, one general-dynamic — and one exists only to be loaded into a namespace of its own); the `glob` one builds a real directory tree in a temp dir and checks every flag against glibc's `glob()` on the same tree; the `spawn` one really forks and execs `/bin/true`, so a refused scheduling policy is seen as the parent's `posix_spawn()` returning the error. Run it with `tests/run-host.sh`, or `meson test -C build-meson`. The kernel keeps its own host unit tests and headless `check`.
 
 ## ⚠️ Known limitations
 
-Honest list as of 2.0.0 — the interface is there; what follows is where the platform cannot answer, and the choices that are deliberate:
+Honest list as of 3.0.0 — the interface is there; what follows is where the platform cannot answer, and the choices that are deliberate:
 
 | Area | What is true |
 |------|--------------|

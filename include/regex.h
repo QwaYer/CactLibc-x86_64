@@ -6,7 +6,7 @@
 /* POSIX 1003.2 regular expressions: BRE and ERE, leftmost-longest, with
  * subexpression capture. */
 
-typedef int regoff_t;                   /* matches the 32-bit target's off_t range */
+typedef int regoff_t;                   /* POSIX's regoff_t, as glibc's own on x86_64 */
 
 typedef struct {
     regoff_t rm_so;                     /* start offset, or -1 */

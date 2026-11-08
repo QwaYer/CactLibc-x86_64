@@ -63,7 +63,7 @@ int clock_settime(int clkid, const struct timespec *tp) {
         return -1;
     }
     cact_time_t t;
-    t.sec  = (uint32_t)tp->tv_sec;
+    t.sec  = (uint64_t)tp->tv_sec;
     t.usec = (uint32_t)(tp->tv_nsec / 1000);
     int r = nio_dev_cmd("sys", CACT_SYSCTL_SETWALLCLOCK, &t);
     return nio_map(r);

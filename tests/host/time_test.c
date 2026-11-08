@@ -4,13 +4,16 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <time.h>
 #include <errno.h>
 
 #define CLOCK_REALTIME  0
 #define CLOCK_MONOTONIC 1
 
-struct timespec { long tv_sec; long tv_nsec; };
+/* No local `struct timespec` any more: on x86_64 the system header's is
+ * { long; long }, exactly the libc's own shape, so mirroring it here would only
+ * clash with it. */
 
 int cact_clock_settime(int clkid, const struct timespec *tp);
 int cact_clock_nanosleep(int clkid, int flags, const struct timespec *req,
@@ -29,7 +32,7 @@ void cact_gmtime_r(const long *t, struct cact_tm *r);
 extern int           cact_host_devcmd_calls;
 extern char          cact_host_devcmd_dev[16];
 extern unsigned long cact_host_devcmd_cmd;
-extern unsigned int  cact_host_devcmd_sec;
+extern uint64_t      cact_host_devcmd_sec;
 extern unsigned int  cact_host_devcmd_usec;
 extern int           cact_host_devcmd_ret;
 
@@ -56,12 +59,13 @@ int main(void) {
     if (r != 0 || cact_host_devcmd_calls != 1 ||
         strcmp(cact_host_devcmd_dev, "sys") ||
         cact_host_devcmd_cmd != CACT_SYSCTL_SETWALLCLOCK ||
-        cact_host_devcmd_sec != 1700000000u ||
+        cact_host_devcmd_sec != 1700000000ull ||
         cact_host_devcmd_usec != 123456u) {
         fails++;
         printf("FAIL set: r=%d calls=%d dev=%s cmd=%#lx sec=%u usec=%u\n",
                r, cact_host_devcmd_calls, cact_host_devcmd_dev,
-               cact_host_devcmd_cmd, cact_host_devcmd_sec, cact_host_devcmd_usec);
+               cact_host_devcmd_cmd, (unsigned long)cact_host_devcmd_sec,
+               cact_host_devcmd_usec);
     }
 
     /* A zero nsec must round-trip as usec 0. */
@@ -69,10 +73,10 @@ int main(void) {
     struct timespec ts0 = { 42, 0 };
     cact_clock_settime(CLOCK_REALTIME, &ts0);
     checks++;
-    if (cact_host_devcmd_sec != 42u || cact_host_devcmd_usec != 0u) {
+    if (cact_host_devcmd_sec != 42ull || cact_host_devcmd_usec != 0u) {
         fails++;
-        printf("FAIL whole-second: sec=%u usec=%u\n",
-               cact_host_devcmd_sec, cact_host_devcmd_usec);
+        printf("FAIL whole-second: sec=%lu usec=%u\n",
+               (unsigned long)cact_host_devcmd_sec, cact_host_devcmd_usec);
     }
 
     /* Rejected without a kernel call: the monotonic clock, NULL, bad nsec. */

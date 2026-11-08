@@ -4,8 +4,11 @@
 #include <stddef.h>
 
 typedef int      pid_t;
-typedef int      ssize_t;
-typedef int      off_t;
+/* ssize_t/off_t are pointer-width on x86_64 (`long`), like the SysV ABI's own
+ * — off_t because the whole ABI that carries a file offset (lseek, truncate,
+ * stat) does, and ssize_t because it is what read()/write() return. */
+typedef long     ssize_t;
+typedef long     off_t;
 typedef unsigned uid_t;
 typedef unsigned gid_t;
 typedef unsigned mode_t;

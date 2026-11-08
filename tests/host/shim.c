@@ -105,25 +105,41 @@ int           cact_host_ctl_ret = 0;
 unsigned char cact_host_ctl_out[24];
 int           cact_host_ctl_out_on;
 
+/* The wire size of the argument each recorded procctl carries.  The shim has to
+ * know it: it both reads the request out of the caller's argument and writes the
+ * answer back into it, and that argument lives in the caller's frame — the two
+ * shapes are 20 and 24 bytes, so one fixed 24-byte copy would run past the
+ * smaller one (which is what the signal unit used to crash on).  A command that
+ * is not listed here is treated as the largest. */
+static size_t ctl_arg_size(unsigned long cmd) {
+    switch (cmd) {
+    case 0x321Au: return 20;            /* CACT_PROCCTL_SIGWAIT: cact_sigwait_arg_t */
+    case 0x3208u: return 24;            /* CACT_PROCCTL_SIGACTION: cact_sigaction_arg_t */
+    default:      return sizeof cact_host_ctl_arg;
+    }
+}
+
 int     nio_ctl(unsigned long c, void *a) {
     cact_host_ctl_calls++;
     cact_host_ctl_cmd = c;
     if (a) {
+        size_t n = ctl_arg_size(c);
         memcpy(&cact_host_ctl_arg0, a, 4);
-        memcpy(cact_host_ctl_arg, a, sizeof cact_host_ctl_arg);
-        if (cact_host_ctl_out_on) memcpy(a, cact_host_ctl_out, sizeof cact_host_ctl_out);
+        memcpy(cact_host_ctl_arg, a, n);
+        if (cact_host_ctl_out_on) memcpy(a, cact_host_ctl_out, n);
     }
     return cact_host_ctl_ret;
 }
 int     nio_read_file(const char *p, void *b, size_t n) { (void)p; (void)b; (void)n; return -1; }
 
 /* nio_dev_cmd is a recorder: the time unit test checks that clock_settime()
- * built the right /dev/sys request.  cact_time_t is { u32 sec, u32 usec }, so
- * eight bytes are read back out of the argument. */
+ * built the right /dev/sys request.  cact_time_t is { u64 sec, u32 usec }, so
+ * the seconds come from the first eight bytes and the microseconds from offset
+ * eight. */
 int           cact_host_devcmd_calls;
 char          cact_host_devcmd_dev[16];
 unsigned long cact_host_devcmd_cmd;
-unsigned int  cact_host_devcmd_sec;
+uint64_t      cact_host_devcmd_sec;
 unsigned int  cact_host_devcmd_usec;
 int           cact_host_devcmd_ret = 0;
 
@@ -133,7 +149,7 @@ int     nio_dev_cmd(const char *d, unsigned long c, void *a) {
     if (d) for (; d[i] && i < sizeof cact_host_devcmd_dev - 1; i++) cact_host_devcmd_dev[i] = d[i];
     cact_host_devcmd_dev[i] = '\0';
     cact_host_devcmd_cmd = c;
-    if (a) { memcpy(&cact_host_devcmd_sec, a, 4); memcpy(&cact_host_devcmd_usec, (char *)a + 4, 4); }
+    if (a) { memcpy(&cact_host_devcmd_sec, a, 8); memcpy(&cact_host_devcmd_usec, (char *)a + 8, 4); }
     return cact_host_devcmd_ret;
 }
 int     nio_open_parent(const char *p, char *base, size_t max)
@@ -224,7 +240,9 @@ void *cact_host_readdir(void *d) {
 
 int cact_host_closedir(void *d) { return closedir((DIR *)d); }
 
-/* The pthread unit renames the thread start stub away (the .S file is not part
- * of a host build); this stands in for it. */
-void cact_pth_thread_exit_stub(void) {}
+/* The pthread unit renames the thread entry trampoline away (thread_start.S is
+ * not part of a host build, and a host test has no kernel to `iretq` into it);
+ * this stands in for it.  pthread_create() only ever stores its address in the
+ * argument it would hand the kernel. */
+void cact_pth_thread_entry(void) {}
 void cact_pth_pid_init(void) {}

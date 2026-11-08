@@ -7,7 +7,7 @@
 #undef errno
 #define __errno_location cact_pth_errno_location
 #define set_thread_area   cact_pth_set_thread_area
-#define __cact_thread_exit_stub cact_pth_thread_exit_stub
+#define __cact_thread_entry     cact_pth_thread_entry
 
 #define __cact_pid_init              cact_pth_pid_init
 #define pthread_attr_init            cact_pthread_attr_init

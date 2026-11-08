@@ -1,7 +1,7 @@
 /* tls host test: the static-TLS block plan and fill (src/tls_static.c).
  *
  * The numbers here are the same arithmetic ld.so and the libc must agree on —
- * ld.so assigns the offsets and resolves R_386_TLS_TPOFF from them, the libc
+ * ld.so assigns the offsets and resolves R_X86_64_TPOFF64 from them, the libc
  * builds each thread's block from the same layout — so getting this right is
  * what makes the two halves meet.
  *
@@ -180,7 +180,7 @@ int main(void) {
         }
     }
 
-    /* an empty layout must leave %gs completely alone */
+    /* an empty layout must leave %fs completely alone */
     {
         memset(&cact_tls_layout, 0, sizeof cact_tls_layout);
         cact_host_tls_calls = 0;

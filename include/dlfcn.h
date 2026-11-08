@@ -42,7 +42,7 @@ int dladdr(const void *addr, Dl_info *info);
  *                    where the executable came from).
  *   RTLD_DI_LMID     *(Lmid_t *)arg = LM_ID_BASE — there is one namespace
  *                    (see dlmopen() below).
- *   RTLD_DI_PHDR     *(const Elf32_Phdr **)arg = the object's program header
+ *   RTLD_DI_PHDR     *(const Elf64_Phdr **)arg = the object's program header
  *                    table, and the *number of entries* is the return value
  *                    (glibc does the same, odd as it looks).
  *
