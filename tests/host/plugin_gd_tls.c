@@ -1,8 +1,8 @@
 /*
- * dlfcn host-test fixture: an i686 plugin whose `__thread` uses the DEFAULT
+ * dlfcn host-test fixture: an x86_64 plugin whose `__thread` uses the DEFAULT
  * (general-dynamic) model.  GNU ld turns its access into a pair of GOT words
- * (R_386_TLS_DTPMOD32 / _DTPOFF32 — the module id and the variable's offset)
- * plus a ___tls_get_addr call, which is the path the loader has to fill from the
+ * (R_X86_64_DTPMOD64 / _DTPOFF64 — the module id and the variable's offset)
+ * plus a __tls_get_addr call, which is the path the loader has to fill from the
  * module it gives the plugin's TLS.
  */
 

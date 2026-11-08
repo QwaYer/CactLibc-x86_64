@@ -1,10 +1,11 @@
 /* dlfcn host test: the real loader, exercised on a real plugin image.
  *
  * The unit is mapped with the actual src/dlfcn.c, against fixtures built for
- * i686 by the harness (a plugin, one that cannot resolve a symbol, and one
- * deliberately linked on top of clibc.so).  The plugin cannot be *called* here
- * — it is i686 code — so every check reads the mapped memory: the copied .data
- * image, the addresses the relocation wrote, and the initialiser's effect.
+ * x86_64 by the harness (a plugin, one that cannot resolve a symbol, and one
+ * deliberately linked on top of clibc.so).  The plugin is x86_64 code, but every
+ * check reads the mapped memory rather than calling into it — the copied .data
+ * image, the addresses the relocations wrote, the initialiser's effect — because
+ * that is what the loader is responsible for.
  *
  * The addresses are real because CactOS images are linked at (and mapped to)
  * fixed addresses that happen to be free in this 64-bit process. */
@@ -46,7 +47,7 @@ static int checks, fails;
     if (!(cond)) { fails++; printf("FAIL %s:%d ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } \
 } while (0)
 
-static void *at(uint32_t va) { return (void *)(uintptr_t)va; }
+static void *at(unsigned long va) { return (void *)(uintptr_t)va; }
 
 /* dl_iterate_phdr callbacks, at file scope because the loader takes a plain
  * function pointer. */
@@ -74,7 +75,7 @@ static int stop_cb(struct dl_phdr_info *info, size_t size, void *data) {
 
 /* Stands in for the program's own program headers: on a real boot ld.so
  * publishes the main image as the first table entry. */
-static Elf32_Phdr fake_phdrs[2];
+static Elf64_Phdr fake_phdrs[2];
 
 int main(void) {
     const char *libc    = getenv("CACT_TEST_LIBC_SO");
@@ -139,7 +140,7 @@ int main(void) {
     void *data = cact_dlsym(h_plug, "plugin_data");
     CK(add != 0, "plugin_add not found");
     CK(data != 0, "plugin_data not found");
-    CK(((uint32_t)(uintptr_t)add  >> 24) == 0x0C, "plugin_add is not in the image: %p", add);
+    CK(((unsigned long)(uintptr_t)add >> 24) == 0x0C, "plugin_add is not in the image: %p", add);
 
     /* ... and the memory there proves it: the .data image was copied and the
      * initialiser ran. */
@@ -160,11 +161,13 @@ int main(void) {
         CK(strlen_expect != 0 && tzname_expect != 0, "clibc.so symbols not found by dlsym");
         CK(sp && tp, "the plugin's pointer slots not found");
         if (sp && tp) {
-            uint32_t got_s = *(uint32_t *)sp, got_t = *(uint32_t *)tp;
-            CK(got_s == (uint32_t)(uintptr_t)strlen_expect,
-               "strlen relocated to %#x, want %#x", got_s, (uint32_t)(uintptr_t)strlen_expect);
-            CK(got_t == (uint32_t)(uintptr_t)tzname_expect,
-               "tzname relocated to %#x, want %#x", got_t, (uint32_t)(uintptr_t)tzname_expect);
+            unsigned long got_s = *(unsigned long *)sp, got_t = *(unsigned long *)tp;
+            CK(got_s == (unsigned long)(uintptr_t)strlen_expect,
+               "strlen relocated to %#lx, want %#lx",
+               got_s, (unsigned long)(uintptr_t)strlen_expect);
+            CK(got_t == (unsigned long)(uintptr_t)tzname_expect,
+               "tzname relocated to %#lx, want %#lx",
+               got_t, (unsigned long)(uintptr_t)tzname_expect);
         }
     }
 
@@ -247,7 +250,7 @@ int main(void) {
      * then take a slice of that reserve.
      *
      * The plugin is built for the initial-exec model, so GNU ld left it an
-     * R_386_TLS_TPOFF against a GOT slot holding the displacement from the
+     * R_X86_64_GOTTPOFF against a GOT slot holding the displacement from the
      * thread pointer — the same relocation ld.so resolves for the program
      * itself, here resolved against a module that did not exist when the block
      * was laid out. */
@@ -268,7 +271,7 @@ int main(void) {
         if (h_tls && tp) {
             cact_dl_object_t *o = (cact_dl_object_t *)h_tls;
             uint32_t off = o->tls_off, i, tls_vaddr = 0, tls_filesz = 0, tls_memsz = 0;
-            Elf32_Phdr *ph = (Elf32_Phdr *)(uintptr_t)o->phdr;
+            Elf64_Phdr *ph = (Elf64_Phdr *)(uintptr_t)o->phdr;
 
             CK(off != CACT_DL_NO_TLS, "the plugin's __thread got no block offset");
             CK(cact_tls_layout.count == 1, "the layout holds %u modules, want 1",
@@ -277,9 +280,9 @@ int main(void) {
             /* The module the loader added describes the plugin's own PT_TLS. */
             for (i = 0; i < o->phnum; i++)
                 if (ph[i].p_type == PT_TLS) {
-                    tls_vaddr  = ph[i].p_vaddr;
-                    tls_filesz = ph[i].p_filesz;
-                    tls_memsz  = ph[i].p_memsz;
+                    tls_vaddr  = (uint32_t)ph[i].p_vaddr;
+                    tls_filesz = (uint32_t)ph[i].p_filesz;
+                    tls_memsz  = (uint32_t)ph[i].p_memsz;
                 }
             CK(tls_memsz != 0, "the plugin has no PT_TLS");
             CK(cact_tls_layout.mods[0].vaddr  == tls_vaddr &&
@@ -305,28 +308,29 @@ int main(void) {
              * the thread pointer down to the variable (the plugin's only
              * variable sits at TLS offset 0). */
             {
-                uint32_t rel = 0, relsz = 0, found = 0;
-                Elf32_Dyn *d = (Elf32_Dyn *)(uintptr_t)o->dyn;
-                for (i = 0; i < o->dynsz / sizeof(Elf32_Dyn); i++) {
-                    if (d[i].d_tag == DT_REL)        rel   = d[i].d_un.d_ptr;
-                    else if (d[i].d_tag == DT_RELSZ) relsz = d[i].d_un.d_val;
-                    else if (d[i].d_tag == DT_NULL)  break;
+                unsigned long rel = 0, relsz = 0, want = (unsigned long)off - total;
+                int found = 0;
+                Elf64_Dyn *d = (Elf64_Dyn *)(uintptr_t)o->dyn;
+                for (i = 0; i < o->dynsz / sizeof(Elf64_Dyn); i++) {
+                    if (d[i].d_tag == DT_RELA)        rel   = d[i].d_un.d_ptr;
+                    else if (d[i].d_tag == DT_RELASZ) relsz = d[i].d_un.d_val;
+                    else if (d[i].d_tag == DT_NULL)   break;
                 }
-                CK(rel && relsz, "the plugin has no .rel.dyn to check");
-                for (i = 0; rel && i < relsz / sizeof(Elf32_Rel); i++) {
-                    Elf32_Rel *r = (Elf32_Rel *)(uintptr_t)(rel + i * sizeof(Elf32_Rel));
-                    if (ELF32_R_TYPE(r->r_info) != R_386_TLS_TPOFF) continue;
+                CK(rel && relsz, "the plugin has no .rela.dyn to check");
+                for (i = 0; rel && i < relsz / sizeof(Elf64_Rela); i++) {
+                    Elf64_Rela *r = (Elf64_Rela *)(uintptr_t)(rel + i * sizeof(Elf64_Rela));
+                    if (ELF64_R_TYPE(r->r_info) != R_X86_64_TPOFF64) continue;
                     found++;
-                    CK(*(uint32_t *)(uintptr_t)r->r_offset == off - total,
-                       "the TPOFF relocation wrote %#x, want %#x",
-                       *(uint32_t *)(uintptr_t)r->r_offset, off - total);
+                    CK(*(unsigned long *)(uintptr_t)r->r_offset == want,
+                       "the TPOFF relocation wrote %#lx, want %#lx",
+                       *(unsigned long *)(uintptr_t)r->r_offset, want);
                 }
                 CK(found >= 1, "the plugin has no TPOFF relocation to check");
             }
         }
 
         /* A plugin built for the default (general-dynamic) model: its access is
-         * a ___tls_get_addr call against the GOT pair the linker emits, which
+         * a __tls_get_addr call against the GOT pair the linker emits, which
          * names the plugin's TLS module id and the variable's offset.  Both are
          * filled in from the module the loader just added, so the plugin loads
          * and cact_tls_addr() turns the pair into the variable's address. */
@@ -335,8 +339,9 @@ int main(void) {
            cact_dlerror() ? cact_dlerror() : "?");
         if (h_gd && tp) {
             cact_dl_object_t *g = (cact_dl_object_t *)h_gd;
-            uint32_t rel = 0, relsz = 0, k, modid = 0, modoff = 0, seen = 0;
-            Elf32_Dyn *d = (Elf32_Dyn *)(uintptr_t)g->dyn;
+            unsigned long rel = 0, relsz = 0, modid = 0, modoff = 0;
+            uint32_t k, seen = 0;
+            Elf64_Dyn *d = (Elf64_Dyn *)(uintptr_t)g->dyn;
 
             CK(g->tls_off != CACT_DL_NO_TLS && g->tls_modid != 0,
                "the general-dynamic plugin got no TLS module (off %#x id %u)",
@@ -347,31 +352,31 @@ int main(void) {
                cact_tls_layout.mods[1].off == g->tls_off,
                "the layout's second module is not the plugin's");
 
-            for (k = 0; k < g->dynsz / sizeof(Elf32_Dyn); k++) {
-                if (d[k].d_tag == DT_REL)        rel   = d[k].d_un.d_ptr;
-                else if (d[k].d_tag == DT_RELSZ) relsz = d[k].d_un.d_val;
-                else if (d[k].d_tag == DT_NULL)  break;
+            for (k = 0; k < g->dynsz / sizeof(Elf64_Dyn); k++) {
+                if (d[k].d_tag == DT_RELA)        rel   = d[k].d_un.d_ptr;
+                else if (d[k].d_tag == DT_RELASZ) relsz = d[k].d_un.d_val;
+                else if (d[k].d_tag == DT_NULL)   break;
             }
-            CK(rel && relsz, "the general-dynamic plugin has no .rel.dyn");
-            for (k = 0; rel && k < relsz / sizeof(Elf32_Rel); k++) {
-                Elf32_Rel *r = (Elf32_Rel *)(uintptr_t)(rel + k * sizeof(Elf32_Rel));
-                uint32_t t = ELF32_R_TYPE(r->r_info);
-                if (t == R_386_TLS_DTPMOD32) {
-                    modid = *(uint32_t *)(uintptr_t)r->r_offset; seen |= 1;
-                } else if (t == R_386_TLS_DTPOFF32) {
-                    modoff = *(uint32_t *)(uintptr_t)r->r_offset; seen |= 2;
+            CK(rel && relsz, "the general-dynamic plugin has no .rela.dyn");
+            for (k = 0; rel && k < relsz / sizeof(Elf64_Rela); k++) {
+                Elf64_Rela *r = (Elf64_Rela *)(uintptr_t)(rel + k * sizeof(Elf64_Rela));
+                uint32_t t = ELF64_R_TYPE(r->r_info);
+                if (t == R_X86_64_DTPMOD64) {
+                    modid = *(unsigned long *)(uintptr_t)r->r_offset; seen |= 1;
+                } else if (t == R_X86_64_DTPOFF64) {
+                    modoff = *(unsigned long *)(uintptr_t)r->r_offset; seen |= 2;
                 }
             }
             CK(seen == 3, "the plugin has no DTPMOD/DTPOFF pair (seen %u)", seen);
             CK(modid == g->tls_modid,
-               "DTPMOD32 wrote %u, want the plugin's id %u", modid, g->tls_modid);
-            CK(modoff == 0, "DTPOFF32 wrote %u, want the variable's TLS offset 0",
+               "DTPMOD64 wrote %lu, want the plugin's id %u", modid, g->tls_modid);
+            CK(modoff == 0, "DTPOFF64 wrote %lu, want the variable's TLS offset 0",
                modoff);
 
-            /* What ___tls_get_addr() computes from the pair: the variable sits
+            /* What __tls_get_addr() computes from the pair: the variable sits
              * at the module's block offset, i.e. tp - total + off. */
-            CK((unsigned char *)cact_tls_addr(&cact_tls_layout, modid, modoff,
-                                              (unsigned long)tp)
+            CK((unsigned char *)cact_tls_addr(&cact_tls_layout, (uint32_t)modid,
+                                              (uint32_t)modoff, (unsigned long)tp)
                    == tp - (long)total + g->tls_off,
                "cact_tls_addr did not land on the module's slice");
 

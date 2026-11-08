@@ -16,8 +16,8 @@
  *
  * A plugin may carry its own `__thread`, in either TLS model a shared object can
  * use.  Initial-exec (gcc/clang -ftls-model=initial-exec) resolves to
- * R_386_TLS_TPOFF against a GOT slot; general-dynamic, the default, resolves the
- * linker's { module id, offset } pair and calls ___tls_get_addr().  Either way
+ * R_X86_64_GOTTPOFF against a GOT slot; general-dynamic, the default, resolves
+ * the linker's { module id, offset } pair and calls __tls_get_addr().  Either way
  * the module goes into the spare room the static TLS block reserved for exactly
  * this, its image is copied into every thread's block, and the relocations are
  * filled from its layout entry.  RTLD_LAZY and RTLD_NOW both relocate eagerly.
@@ -43,8 +43,8 @@ cact_dl_table_t cact_dl_table;
 
 struct dl_loaded {
     char           path[256];
-    uint32_t       seg_va[DL_MAX_SEGS];       /* the PT_LOAD mappings, to munmap */
-    uint32_t       seg_size[DL_MAX_SEGS];
+    unsigned long  seg_va[DL_MAX_SEGS];       /* the PT_LOAD mappings, to munmap */
+    unsigned long  seg_size[DL_MAX_SEGS];
     int            nseg;
     uint32_t       deps[CACT_DL_MAX_OBJECTS]; /* the object's DT_NEEDED, by index */
     int            ndeps;
@@ -55,7 +55,7 @@ static struct dl_loaded dl_loaded[CACT_DL_MAX_OBJECTS];
 
 /* Each object's program headers, kept because its ELF header is not mapped —
  * dl_iterate_phdr has to hand the callback a real table. */
-static Elf32_Phdr dl_phdrs[CACT_DL_MAX_OBJECTS][CACT_DL_MAX_PHDRS];
+static Elf64_Phdr dl_phdrs[CACT_DL_MAX_OBJECTS][CACT_DL_MAX_PHDRS];
 
 /* ── error text (per thread, "pending until read") ───────────────────────── */
 
@@ -86,7 +86,7 @@ char *dlerror(void) {
 
 /* ── small helpers ──────────────────────────────────────────────────────── */
 
-static void *at(uint32_t va) { return (void *)(uintptr_t)va; }
+static void *at(unsigned long va) { return (void *)(uintptr_t)va; }
 
 static int overlaps(unsigned long a, unsigned long asz,
                     unsigned long b, unsigned long bsz) {
@@ -122,7 +122,7 @@ static cact_dl_object_t *dl_find_pinned(const char *name) {
     return 0;
 }
 
-static uint32_t dl_symcount(uint32_t hash, uint32_t gnu_hash, uint32_t symtab) {
+static uint32_t dl_symcount(unsigned long hash, unsigned long gnu_hash, unsigned long symtab) {
     if (!symtab) return 0;
     if (hash) return ((uint32_t *)at(hash))[1];             /* nchain */
 
@@ -145,19 +145,19 @@ static uint32_t dl_symcount(uint32_t hash, uint32_t gnu_hash, uint32_t symtab) {
 }
 
 /* One symbol, by name, in one object.  0 when it is not there. */
-static uint32_t dl_lookup_in(cact_dl_object_t *o, const char *name) {
+static unsigned long dl_lookup_in(cact_dl_object_t *o, const char *name) {
     if (!o || !o->name || !o->symtab || !o->strtab) return 0;
     for (uint32_t j = 1; j < o->symcount; j++) {
-        Elf32_Sym *sym = &((Elf32_Sym *)at(o->symtab))[j];
-        uint32_t bind;
+        Elf64_Sym *sym = &((Elf64_Sym *)at(o->symtab))[j];
+        int bind;
         const char *sn;
         if (sym->st_shndx == SHN_UNDEF) continue;
-        bind = ELF32_ST_BIND(sym->st_info);
+        bind = ELF64_ST_BIND(sym->st_info);
         if (bind != STB_GLOBAL && bind != STB_WEAK) continue;
         if (sym->st_value == 0) continue;                   /* the same rule ld.so uses */
         if (sym->st_name >= o->strsz) continue;
         sn = (const char *)at(o->strtab) + sym->st_name;
-        if (strcmp(sn, name) == 0) return sym->st_value;
+        if (strcmp(sn, name) == 0) return (unsigned long)sym->st_value;
     }
     return 0;
 }
@@ -165,10 +165,10 @@ static uint32_t dl_lookup_in(cact_dl_object_t *o, const char *name) {
 /* Search order for a relocation inside object `self`: the object itself, then
  * its DT_NEEDED depth first, then everything the loader pinned (the program and
  * clibc.so) and anything opened with RTLD_GLOBAL.  `owner`, when not NULL,
- * receives the index of the object the symbol was found in — R_386_TLS_DTPMOD32
+ * receives the index of the object the symbol was found in — R_X86_64_DTPMOD64
  * needs that object's TLS module id, not just the value. */
-static uint32_t dl_resolve_depth(int self, const char *name, int *owner, int depth) {
-    uint32_t v;
+static unsigned long dl_resolve_depth(int self, const char *name, int *owner, int depth) {
+    unsigned long v;
     if (depth > 4) return 0;
 
     if (self >= 0 && cact_dl_table.objs[self].name) {
@@ -199,7 +199,7 @@ static uint32_t dl_resolve_depth(int self, const char *name, int *owner, int dep
     return 0;
 }
 
-static uint32_t dl_resolve(int self, const char *name) {
+static unsigned long dl_resolve(int self, const char *name) {
     return dl_resolve_depth(self, name, 0, 0);
 }
 
@@ -209,8 +209,9 @@ static uint32_t dl_resolve(int self, const char *name) {
  * plugin opened RTLD_LOCAL, and anything belonging to a namespace made by
  * dlmopen(), is deliberately not here — that isolation is the whole point of a
  * namespace. */
-static uint32_t dl_lookup_global(const char *name) {
-    uint32_t v, i;
+static unsigned long dl_lookup_global(const char *name) {
+    unsigned long v;
+    uint32_t i;
     int d;
     uint32_t idx[CACT_DL_MAX_OBJECTS];
     uint32_t nx = 0;
@@ -237,74 +238,81 @@ static uint32_t dl_lookup_global(const char *name) {
 
 /* ── relocation ─────────────────────────────────────────────────────────── */
 
-/* One relocation table.  `use_addend` selects RELA semantics (.rela.dyn). */
+/* One relocation table.  `use_addend` selects RELA semantics (.rela.dyn), which
+ * is what x86_64 uses: the addend travels in the entry instead of in the word
+ * being patched. */
 static int dl_relocs(cact_dl_object_t *o, int self,
-                     uint32_t addr, uint32_t size, uint32_t ent, int use_addend)
+                     unsigned long addr, unsigned long size, unsigned long ent,
+                     int use_addend)
 {
-    uint32_t i, n;
+    unsigned long i, n;
     if (!addr || !size || !ent) return 0;
     n = size / ent;
 
     for (i = 0; i < n; i++) {
-        uint32_t off = addr + i * ent;
-        uint32_t r_offset = ((uint32_t *)at(off))[0];
-        uint32_t r_info   = ((uint32_t *)at(off))[1];
-        int32_t  r_addend = use_addend ? ((int32_t *)at(off))[2] : 0;
-        uint32_t type = ELF32_R_TYPE(r_info);
-        uint32_t si   = ELF32_R_SYM(r_info);
-        uint32_t *target = (uint32_t *)at(r_offset);
-        uint32_t S = 0, A;
+        unsigned long off = addr + i * ent;
+        unsigned long r_offset = ((unsigned long *)at(off))[0];
+        unsigned long r_info   = ((unsigned long *)at(off))[1];
+        long          r_addend = use_addend ? ((long *)at(off))[2] : 0;
+        uint32_t type = ELF64_R_TYPE(r_info);
+        uint32_t si   = ELF64_R_SYM(r_info);
+        unsigned long *target = (unsigned long *)at(r_offset);
+        unsigned long S = 0, A;
         int owner = -1;                             /* which object defined it */
 
         if (si && si < o->symcount) {
-            Elf32_Sym *sym = &((Elf32_Sym *)at(o->symtab))[si];
+            Elf64_Sym *sym = &((Elf64_Sym *)at(o->symtab))[si];
             if (sym->st_shndx == SHN_UNDEF) {
                 if (sym->st_name < o->strsz) {
                     const char *sname = (const char *)at(o->strtab) + sym->st_name;
                     S = dl_resolve_depth(self, sname, &owner, 0);
                     /* A weak undefined symbol is allowed to come out as 0. */
-                    if (!S && ELF32_ST_BIND(sym->st_info) != STB_WEAK) {
+                    if (!S && ELF64_ST_BIND(sym->st_info) != STB_WEAK) {
                         dl_errf("undefined symbol: ", sname);
                         return -1;
                     }
                 }
             } else {
-                S = sym->st_value;
+                S = (unsigned long)sym->st_value;
                 owner = self;
             }
         }
 
         switch (type) {
-        case R_386_NONE:
+        case R_X86_64_NONE:
             break;
-        case R_386_32:                              /* S + A */
-            A = use_addend ? (uint32_t)r_addend : *target;
+        case R_X86_64_64:                           /* S + A */
+            A = use_addend ? (unsigned long)r_addend : *target;
             *target = S + A;
             break;
-        case R_386_PC32:                            /* S + A - P */
-            A = use_addend ? (uint32_t)r_addend : *target;
+        case R_X86_64_PC32:                         /* S + A - P */
+            A = use_addend ? (unsigned long)r_addend : *target;
             *target = S + A - r_offset;
             break;
-        case R_386_GLOB_DAT:
-        case R_386_JMP_SLOT:                        /* S */
+        case R_X86_64_GLOB_DAT:
+        case R_X86_64_JUMP_SLOT:                    /* S */
             *target = S;
             break;
-        case R_386_RELATIVE:                        /* B + A, B = 0 */
-            if (use_addend) *target = (uint32_t)r_addend;
+        case R_X86_64_RELATIVE:                     /* B + A, B = 0 */
+            /* On i386 this was a no-op — there was no entry to read an addend
+             * from and the word already held it.  With SHT_RELA the entry
+             * carries it, so the word has to be written. */
+            if (use_addend) *target = (unsigned long)r_addend;
             break;
-        case R_386_COPY:
+        case R_X86_64_COPY:
             if (S && si < o->symcount) {
-                Elf32_Sym *sym = &((Elf32_Sym *)at(o->symtab))[si];
+                Elf64_Sym *sym = &((Elf64_Sym *)at(o->symtab))[si];
                 if (sym->st_size && sym->st_size <= 65536)
                     memcpy(target, at(S), sym->st_size);
             }
             break;
-        case R_386_TLS_TPOFF:
-        case R_386_TLS_TPOFF32:
+        case R_X86_64_TPOFF64:
+        case R_X86_64_GOTTPOFF:
+        case R_X86_64_TPOFF32:
             /* Static TLS: the displacement from the thread pointer down to the
              * variable, which GNU ld asks for both from a local-exec access (a
              * code displacement) and from the GOT slot an initial-exec access
-             * loads and adds to %gs:0.  The symbol's st_value is the variable's
+             * loads and adds to %fs:0.  The symbol's st_value is the variable's
              * offset inside this object's own TLS image, so the answer is
              * `block_offset + st_value - total`.  A variable defined in
              * *another* object would need that object's block offset instead;
@@ -314,36 +322,36 @@ static int dl_relocs(cact_dl_object_t *o, int self,
                 dl_err("unsupported TLS relocation in this object");
                 return -1;
             } else {
-                Elf32_Sym *sym = &((Elf32_Sym *)at(o->symtab))[si];
+                Elf64_Sym *sym = &((Elf64_Sym *)at(o->symtab))[si];
                 if (sym->st_shndx == SHN_UNDEF ||
-                    ELF32_ST_TYPE(sym->st_info) != STT_TLS) {
+                    ELF64_ST_TYPE(sym->st_info) != STT_TLS) {
                     dl_err("unsupported TLS relocation in this object");
                     return -1;
                 }
             }
-            A = use_addend ? (uint32_t)r_addend : *target;
+            A = use_addend ? (unsigned long)r_addend : *target;
             *target = o->tls_off + S + A - cact_tls_layout.total;
             break;
-        case R_386_TLS_DTPMOD32:
+        case R_X86_64_DTPMOD64:
             /* General-dynamic: the two GOT words the linker emits next to each
              * other — this one takes the defining object's TLS module id, and
-             * R_386_TLS_DTPOFF32 the offset inside that module.  ___
-             * tls_get_addr() then finds the module by id in the layout.  The
+             * R_X86_64_DTPOFF64 the offset inside that module.
+             * __tls_get_addr() then finds the module by id in the layout.  The
              * symbol has to live in an object that actually carries TLS. */
             if (owner < 0 ||
                 cact_dl_table.objs[owner].tls_off == CACT_DL_NO_TLS) {
                 dl_err("unsupported TLS relocation in this object");
                 return -1;
             }
-            A = use_addend ? (uint32_t)r_addend : *target;
+            A = use_addend ? (unsigned long)r_addend : *target;
             *target = cact_dl_table.objs[owner].tls_modid + A;
             break;
-        case R_386_TLS_DTPOFF32:
-            A = use_addend ? (uint32_t)r_addend : *target;
+        case R_X86_64_DTPOFF64:
+            A = use_addend ? (unsigned long)r_addend : *target;
             *target = S + A;
             break;
         default:
-            if (type >= R_386_TLS_TPOFF && type <= R_386_TLS_TPOFF32) {
+            if (type >= R_X86_64_DTPMOD64 && type <= R_X86_64_TPOFF32) {
                 dl_err("unsupported TLS relocation in this object");
                 return -1;
             }
@@ -355,9 +363,10 @@ static int dl_relocs(cact_dl_object_t *o, int self,
 
 /* ── mapping ────────────────────────────────────────────────────────────── */
 
-static unsigned char *dl_read_file(const char *path, uint32_t *len) {
+static unsigned char *dl_read_file(const char *path, unsigned long *len) {
     int fd = open(path, O_RDONLY);
-    uint32_t cap = 64 * 1024, n = 0;
+    uint32_t cap = 64 * 1024;
+    unsigned long n = 0;
     unsigned char *buf;
 
     if (fd < 0) return 0;
@@ -380,7 +389,7 @@ static unsigned char *dl_read_file(const char *path, uint32_t *len) {
             return 0;
         }
         if (r == 0) break;
-        n += (uint32_t)r;
+        n += (unsigned long)r;
     }
     close(fd);
     *len = n;
@@ -404,13 +413,13 @@ static void dl_path_for(const char *name, char *out, size_t cap) {
 static int dl_load_one(const char *name, int global, uint32_t ns)
 {
     char path[256];
-    uint32_t filelen = 0, i;
+    unsigned long filelen = 0, i;
     unsigned char *file;
-    Elf32_Ehdr *eh;
-    Elf32_Phdr *ph;
-    uint32_t dyn = 0, dynsz = 0;
-    uint32_t lo = 0, hi = 0;
-    uint32_t symtab = 0, strtab = 0, strsz = 0, hash = 0, gnu_hash = 0;
+    Elf64_Ehdr *eh;
+    Elf64_Phdr *ph;
+    unsigned long dyn = 0, dynsz = 0;
+    unsigned long lo = 0, hi = 0;
+    unsigned long symtab = 0, strtab = 0, strsz = 0, hash = 0, gnu_hash = 0;
     uint32_t soname_off = 0xffffffffu;
     uint32_t tls_vaddr = 0, tls_filesz = 0, tls_memsz = 0, tls_align = 4;
     int idx, nseg = 0;
@@ -418,20 +427,26 @@ static int dl_load_one(const char *name, int global, uint32_t ns)
     dl_path_for(name, path, sizeof path);
     file = dl_read_file(path, &filelen);
     if (!file) { dl_errf("cannot read ", path); return -1; }
-    if (filelen < sizeof(Elf32_Ehdr)) { dl_errf("not an ELF file: ", path); goto fail; }
+    if (filelen < sizeof(Elf64_Ehdr)) { dl_errf("not an ELF file: ", path); goto fail; }
 
-    eh = (Elf32_Ehdr *)file;
-    if (eh->e_ident[0] != ELF32_EI_MAGIC0 || eh->e_ident[1] != ELF32_EI_MAGIC1 ||
-        eh->e_ident[2] != ELF32_EI_MAGIC2 || eh->e_ident[3] != ELF32_EI_MAGIC3) {
+    eh = (Elf64_Ehdr *)file;
+    if (eh->e_ident[0] != ELF_EI_MAGIC0 || eh->e_ident[1] != ELF_EI_MAGIC1 ||
+        eh->e_ident[2] != ELF_EI_MAGIC2 || eh->e_ident[3] != ELF_EI_MAGIC3) {
         dl_errf("not an ELF file: ", path);
         goto fail;
     }
-    if (eh->e_phentsize < sizeof(Elf32_Phdr) || eh->e_phnum == 0 ||
-        (uint32_t)eh->e_phoff + (uint32_t)eh->e_phnum * eh->e_phentsize > filelen) {
+    /* A 32-bit image here would be mapped and then relocated with the wrong
+     * rules; every CactOS image is x86_64, so say so instead. */
+    if (eh->e_machine != EM_X86_64) {
+        dl_errf("not an x86_64 image: ", path);
+        goto fail;
+    }
+    if (eh->e_phentsize < sizeof(Elf64_Phdr) || eh->e_phnum == 0 ||
+        eh->e_phoff + (unsigned long)eh->e_phnum * eh->e_phentsize > filelen) {
         dl_errf("bad program headers: ", path);
         goto fail;
     }
-    ph = (Elf32_Phdr *)(file + eh->e_phoff);
+    ph = (Elf64_Phdr *)(file + eh->e_phoff);
 
     if (cact_dl_table.count >= CACT_DL_MAX_OBJECTS) {
         dl_err("too many objects loaded");
@@ -445,8 +460,8 @@ static int dl_load_one(const char *name, int global, uint32_t ns)
     for (i = 0; i < eh->e_phnum; i++) {
         if (ph[i].p_type != PT_LOAD || ph[i].p_memsz == 0) continue;
         {
-            uint32_t b = ph[i].p_vaddr & ~0xFFFu;
-            uint32_t e = (ph[i].p_vaddr + ph[i].p_memsz + 0xFFFu) & ~0xFFFu;
+            unsigned long b = ph[i].p_vaddr & ~0xFFFul;
+            unsigned long e = (ph[i].p_vaddr + ph[i].p_memsz + 0xFFFul) & ~0xFFFul;
             if (!lo || b < lo) lo = b;
             if (e > hi) hi = e;
         }
@@ -463,23 +478,23 @@ static int dl_load_one(const char *name, int global, uint32_t ns)
 
     /* Map and copy. */
     for (i = 0; i < eh->e_phnum; i++) {
-        uint32_t seg_va;
+        unsigned long seg_va;
         if (ph[i].p_type == PT_DYNAMIC) { dyn = ph[i].p_vaddr; dynsz = ph[i].p_filesz; continue; }
         if (ph[i].p_type == PT_TLS) {
             /* Not mapped here: the .tdata it describes already sits in one of
              * the PT_LOAD segments above.  All the loader needs is where the
              * initial image is and how big the module's block is. */
-            tls_vaddr  = ph[i].p_vaddr;
-            tls_filesz = ph[i].p_filesz;
-            tls_memsz  = ph[i].p_memsz;
-            tls_align  = ph[i].p_align;
+            tls_vaddr  = (uint32_t)ph[i].p_vaddr;
+            tls_filesz = (uint32_t)ph[i].p_filesz;
+            tls_memsz  = (uint32_t)ph[i].p_memsz;
+            tls_align  = (uint32_t)ph[i].p_align;
             continue;
         }
         if (ph[i].p_type != PT_LOAD || ph[i].p_memsz == 0) continue;
 
-        seg_va = ph[i].p_vaddr & ~0xFFFu;
+        seg_va = ph[i].p_vaddr & ~0xFFFul;
         if (nseg >= DL_MAX_SEGS) { dl_errf("too many segments: ", path); goto unmap; }
-        if (mmap(at(seg_va), ((ph[i].p_vaddr + ph[i].p_memsz + 0xFFFu) & ~0xFFFu) - seg_va,
+        if (mmap(at(seg_va), (size_t)(((ph[i].p_vaddr + ph[i].p_memsz + 0xFFFul) & ~0xFFFul) - seg_va),
                  PROT_READ | PROT_WRITE | PROT_EXEC,
                  MAP_PRIVATE | MAP_FIXED | MAP_ANON, -1, 0) == MAP_FAILED) {
             dl_errf("mmap failed: ", path);
@@ -487,7 +502,7 @@ static int dl_load_one(const char *name, int global, uint32_t ns)
         }
         dl_loaded[idx].seg_va[nseg] = seg_va;
         dl_loaded[idx].seg_size[nseg] =
-            ((ph[i].p_vaddr + ph[i].p_memsz + 0xFFFu) & ~0xFFFu) - seg_va;
+            ((ph[i].p_vaddr + ph[i].p_memsz + 0xFFFul) & ~0xFFFul) - seg_va;
         nseg++;
 
         if (ph[i].p_filesz) {
@@ -516,9 +531,7 @@ static int dl_load_one(const char *name, int global, uint32_t ns)
         o->flags = global ? CACT_DL_GLOBAL : 0;
         o->ns    = ns;
         o->tls_off = CACT_DL_NO_TLS;
-        /* the program headers, copied out of the file image.  The cast goes
-         * straight to unsigned long: this libc's uintptr_t is 32 bits, so going
-         * through it would truncate on the 64-bit host the tests build for. */
+        /* the program headers, copied out of the file image */
         o->phdr  = (unsigned long)&dl_phdrs[idx][0];
         o->phnum = eh->e_phnum < CACT_DL_MAX_PHDRS ? (uint32_t)eh->e_phnum
                                                   : CACT_DL_MAX_PHDRS;
@@ -528,13 +541,13 @@ static int dl_load_one(const char *name, int global, uint32_t ns)
 
     /* Walk the dynamic section, then its dependencies, then relocate. */
     {
-        Elf32_Dyn *d = (Elf32_Dyn *)at(dyn);
-        uint32_t maxent = dynsz / sizeof(Elf32_Dyn);
+        Elf64_Dyn *d = (Elf64_Dyn *)at(dyn);
+        unsigned long maxent = dynsz / sizeof(Elf64_Dyn);
         uint32_t needed[16];
-        uint32_t rel = 0, relsz = 0, relent = 8;
-        uint32_t rela = 0, relasz = 0, relaent = 12;
-        uint32_t jmprel = 0, jmprelsz = 0, pltrel = DT_REL;
-        uint32_t initfn = 0, initarr = 0, initarrsz = 0;
+        unsigned long rel = 0, relsz = 0, relent = sizeof(Elf64_Rel);
+        unsigned long rela = 0, relasz = 0, relaent = sizeof(Elf64_Rela);
+        unsigned long jmprel = 0, jmprelsz = 0, pltrel = DT_REL;
+        unsigned long initfn = 0, initarr = 0, initarrsz = 0;
         int nneed = 0;
         cact_dl_object_t *o = &cact_dl_table.objs[idx];
 
@@ -612,16 +625,18 @@ static int dl_load_one(const char *name, int global, uint32_t ns)
         if (dl_relocs(o, idx, rela, relasz, relaent, 1) != 0) goto unload;
         if (jmprel && jmprelsz) {
             if (pltrel == DT_RELA) {
-                if (dl_relocs(o, idx, jmprel, jmprelsz, sizeof(Elf32_Rela), 1) != 0) goto unload;
+                if (dl_relocs(o, idx, jmprel, jmprelsz, sizeof(Elf64_Rela), 1) != 0) goto unload;
             } else {
-                if (dl_relocs(o, idx, jmprel, jmprelsz, sizeof(Elf32_Rel), 0) != 0) goto unload;
+                if (dl_relocs(o, idx, jmprel, jmprelsz, sizeof(Elf64_Rel), 0) != 0) goto unload;
             }
         }
 
-        /* dlopen() runs the object's initialisers, as POSIX requires. */
+        /* dlopen() runs the object's initialisers, as POSIX requires.  A
+         * pointer-sized entry: on x86_64 .init_array holds 8-byte function
+         * pointers. */
         if (initfn) ((void (*)(void))at(initfn))();
-        for (i = 0; initarr && i + 4 <= initarrsz; i += 4) {
-            uint32_t fp = ((uint32_t *)at(initarr))[i / 4];
+        for (i = 0; initarr && i + 8 <= initarrsz; i += 8) {
+            unsigned long fp = ((unsigned long *)at(initarr))[i / 8];
             if (fp) ((void (*)(void))at(fp))();
         }
     }
@@ -721,7 +736,7 @@ static int dl_object_of(unsigned long a) {
 }
 
 void *dlsym(void *handle, const char *symbol) {
-    uint32_t v;
+    unsigned long v;
 
     if (!symbol) { dl_err("dlsym: no symbol name"); return 0; }
 
@@ -814,11 +829,11 @@ int dladdr(const void *addr, Dl_info *info) {
     info->dli_fbase = 0;
     info->dli_sname = 0;
     info->dli_saddr = 0;
-    if (a > 0xffffffffu) return 0;              /* no image lives up there */
 
     for (i = 0; i < cact_dl_table.count; i++) {
         cact_dl_object_t *o = &cact_dl_table.objs[i];
-        uint32_t best_va = 0, j;
+        unsigned long best_va = 0;
+        uint32_t j;
         const char *best_name = 0;
 
         if (!o->name || !o->size) continue;
@@ -829,12 +844,12 @@ int dladdr(const void *addr, Dl_info *info) {
 
         if (o->symtab && o->strtab) {
             for (j = 1; j < o->symcount; j++) {
-                Elf32_Sym *sym = &((Elf32_Sym *)at(o->symtab))[j];
+                Elf64_Sym *sym = &((Elf64_Sym *)at(o->symtab))[j];
                 if (sym->st_shndx == SHN_UNDEF) continue;
-                if (!sym->st_value || sym->st_value > (uint32_t)a) continue;
+                if (!sym->st_value || (unsigned long)sym->st_value > a) continue;
                 if (sym->st_name >= o->strsz) continue;
-                if (sym->st_value >= best_va) {     /* the nearest one at or below */
-                    best_va = sym->st_value;
+                if ((unsigned long)sym->st_value >= best_va) {  /* nearest at or below */
+                    best_va = (unsigned long)sym->st_value;
                     best_name = (const char *)at(o->strtab) + sym->st_name;
                 }
             }
@@ -866,7 +881,7 @@ int dl_iterate_phdr(int (*callback)(struct dl_phdr_info *, size_t, void *), void
         memset(&info, 0, sizeof info);
         info.dlpi_addr  = 0;
         info.dlpi_name  = o->name;
-        info.dlpi_phdr  = (const Elf32_Phdr *)o->phdr;
+        info.dlpi_phdr  = (const Elf64_Phdr *)o->phdr;
         info.dlpi_phnum = (uint16_t)o->phnum;
 
         r = callback(&info, sizeof info, data);
@@ -893,7 +908,7 @@ static void dl_lms_build(void) {
         if (!o->name) continue;
         dl_lms[i].l_addr = 0;                    /* no load bias, ever */
         dl_lms[i].l_name = (char *)o->name;
-        dl_lms[i].l_ld   = (Elf32_Dyn *)(uintptr_t)o->dyn;
+        dl_lms[i].l_ld   = (Elf64_Dyn *)(uintptr_t)o->dyn;
         dl_lms[i].l_prev = prev < 0 ? 0 : &dl_lms[prev];
         dl_lms[i].l_next = 0;
         if (prev >= 0) dl_lms[prev].l_next = &dl_lms[i];
@@ -960,7 +975,7 @@ int dlinfo(void *handle, int request, void *arg) {
         dl_origin_of(idx, (char *)arg);
         return 0;
     case RTLD_DI_PHDR:
-        *(const Elf32_Phdr **)arg = (const Elf32_Phdr *)o->phdr;
+        *(const Elf64_Phdr **)arg = (const Elf64_Phdr *)o->phdr;
         return (int)o->phnum;   /* glibc returns the count here, not 0 */
     default:
         dl_err("unsupported dlinfo request");

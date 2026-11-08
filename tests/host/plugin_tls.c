@@ -1,13 +1,13 @@
 /*
- * dlfcn host-test fixture: an i686 plugin that carries its own `__thread`.
+ * dlfcn host-test fixture: an x86_64 plugin that carries its own `__thread`.
  *
- * Nothing here is executed on the host (it is i686 code) — the test maps it with
- * the real loader and then reads the resulting memory: the module the loader
+ * Nothing here is executed — the test maps it with the real loader and then
+ * reads the resulting memory: the module the loader
  * added to the static TLS layout, the image it copied into the thread blocks,
- * and the displacement its R_386_TLS_TPOFF relocation wrote into the GOT slot.
+ * and the displacement its R_X86_64_TPOFF64 relocation wrote into the GOT slot.
  *
  * The variable is built for the initial-exec model on purpose: that is the model
- * a static TLS block can host, and GNU ld turns it into an R_386_TLS_TPOFF
+ * a static TLS block can host, and GNU ld turns it into an R_X86_64_TPOFF64
  * against a GOT slot (the default, general-dynamic, would need __tls_get_addr
  * and a DTV, which CactOS does not have — see plugin_gd_tls.c).
  */

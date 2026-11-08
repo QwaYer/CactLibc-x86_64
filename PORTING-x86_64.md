@@ -195,11 +195,31 @@ rsp/rip`), `src/thread_start.S`.
 
 ### Фаза 5 — ELF64
 
-`dl_elf.h`, `ldso/ldso.c` (все адресные поля — `uintptr_t`/`unsigned long`),
-`src/dlfcn.c`, фикстуры host-теста (`plugin.ld`, флаги) → x86_64.
+`dl_elf.h` (`Elf64_*`, `R_X86_64_*`), `dl_objects.h`/`link.h` (адресные поля —
+`unsigned long`), `ldso/ldso.c`, `src/dlfcn.c`, фикстуры host-теста
+(`plugin.ld`, `-m elf_x86_64 -fPIC`) → x86_64.
 
 **Milestone:** юнит `dlfcn` зелёный на x86_64-плагинах; `readelf -r clibc.so`
 показывает только поддерживаемые релокации.
+
+Что показали фикстуры (не рассуждение, а `readelf -r` на собранных `.so`):
+
+- `clibc.so` несёт ровно `R_X86_64_RELATIVE`/`GLOB_DAT`/`JUMP_SLOT` — TLS-релокаций
+  в ней нет, потому что самой libc `__thread` не нужен;
+- плагин с `initial-exec` на x86_64 получает **`R_X86_64_TPOFF64`** в `.rela.dyn`
+  (не `GOTTPOFF`, как можно было ожидать): GNU ld сводит GOT-слот initial-exec к
+  нему. Адденд 0, `st_value` 0, поэтому GOT-слот получает `off - total` — ровно
+  ту отрицательную дистанцию до thread pointer, которую код и складывает с
+  `%fs:0`;
+- плагин без атрибута (`-fPIC`) даёт **`DTPMOD64` + `DTPOFF64`** и
+  `JUMP_SLOT` на `__tls_get_addr`, который резолвится в clibc.so;
+- `R_X86_64_RELATIVE` обязан **писать** адденд (в i386 с `SHT_REL` он уже лежал
+  в слове и ветка была пустой) — иначе `.got.plt`/`.data.rel.ro` clibc.so
+  остались бы неверными;
+- фикстуры пришлось собирать `-fPIC`: на x86_64 `-fPIE` в `-shared`-линковке
+  отвергается (`R_X86_64_PC32` по глобальной переменной), тогда как на i386
+  тот же `-fPIE` проходил — поэтому разделение флагов «PIE для обычных, PIC для
+  TLS» больше не существует.
 
 ### Фаза 6 — остаток и тесты
 

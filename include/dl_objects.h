@@ -25,12 +25,14 @@
 
 typedef struct {
     const char *name;        /* soname, or "<main>" for the executable */
-    uint32_t    dyn;         /* PT_DYNAMIC address (0 = the object has none) */
-    uint32_t    dynsz;
-    uint32_t    symtab;      /* .dynsym address */
-    uint32_t    strtab;      /* .dynstr address */
+    /* Addresses inside the image, in link-time terms — `unsigned long` on
+     * x86_64, and never biased (see dl_elf.h). */
+    unsigned long dyn;       /* PT_DYNAMIC address (0 = the object has none) */
+    unsigned long dynsz;
+    unsigned long symtab;    /* .dynsym address */
+    unsigned long strtab;    /* .dynstr address */
+    unsigned long strsz;
     uint32_t    symcount;    /* entries in .dynsym */
-    uint32_t    strsz;
     /* This object's program headers, kept by whichever loader mapped it (the
      * ELF header of a CactOS image is not mapped).  `unsigned long` rather than
      * uint32_t for the same reason tls_layout.h's `vaddr` is: the host test
@@ -57,7 +59,7 @@ typedef struct {
      * needs it to unhook the object's image from the layout. */
     uint32_t    tls_off;
     /* This object's TLS module id (see include/tls_layout.h) — what a
-     * general-dynamic relocation names so ___tls_get_addr() can find the
+     * general-dynamic relocation names so __tls_get_addr() can find the
      * module.  0 when the object has no TLS (tls_off is CACT_DL_NO_TLS). */
     uint32_t    tls_modid;
 } cact_dl_object_t;

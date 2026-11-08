@@ -15,6 +15,11 @@ SECTIONS {
     .gnu.hash  : { *(.gnu.hash) }
     .dynsym    : { *(.dynsym) }
     .dynstr    : { *(.dynstr) }
+    /* x86_64 relocates with SHT_RELA, so these are the ones that carry the
+     * fixture's dynamic relocations; the .rel.* pair is kept for the same
+     * reason libc.ld keeps it. */
+    .rela.dyn  : { *(.rela.dyn) }
+    .rela.plt  : { *(.rela.plt) }
     .rel.dyn   : { *(.rel.dyn) }
     .rel.plt   : { *(.rel.plt) }
 

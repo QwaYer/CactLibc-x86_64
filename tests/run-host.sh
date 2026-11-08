@@ -56,13 +56,14 @@ run_unit() {
 
 # ── fixtures for the dlfcn unit ─────────────────────────────────────────────
 #
-# A plugin is an i686 shared object the loader maps at a fixed address.  It is
+# A plugin is an x86_64 shared object the loader maps at a fixed address.  It is
 # built here rather than committed (no binaries in the repositories) and only
 # when that unit is asked for; the test main learns the paths from the
 # environment.  The same source is linked three times: normally, with an
 # unresolvable symbol, and deliberately on top of clibc.so so the loader's
 # collision check has something to refuse.  Two more carry a __thread of their
-# own — one static (initial-exec), one general-dynamic, which must be refused.
+# own — one static (initial-exec), one general-dynamic — whose relocations are
+# what the loader has to fill from the TLS layout.
 build_dl_fixtures() {
     libc_so="$root/build-meson/clibc.so"
     if [ ! -f "$libc_so" ]; then
@@ -70,20 +71,19 @@ build_dl_fixtures() {
         return 1
     fi
     xcc=${CROSSCC:-clang}
-    ldflags="-m elf_i386 -shared --hash-style=both -nostdlib -T $here/host/plugin.ld"
-    xcflags="-m32 -fPIE -ffreestanding -fno-stack-protector -nostdlib"
-    # The two __thread fixtures are built -fPIC instead: only then does the
-    # linker keep the TLS model the source asked for (initial-exec's GOT slot,
-    # and general-dynamic's module-id pair), which is what is under test.  Built
-    # -fPIE it relaxes both to local-exec, and the general-dynamic one would load
-    # as if it were static.
-    xcflags_tls="-m32 -fPIC -ffreestanding -fno-stack-protector -nostdlib"
+    ldflags="-m elf_x86_64 -shared --hash-style=both -nostdlib -T $here/host/plugin.ld"
+    # -fPIC for every fixture: a shared object on x86_64 resolves its globals
+    # through the GOT, and -fPIE's PC-relative form is refused by the linker.
+    # It is also what keeps each __thread fixture in the model its source asks
+    # for — initial-exec's GOT slot, and general-dynamic's module-id pair, which
+    # is what the loader has to fill from the TLS layout.
+    xcflags="-m64 -fPIC -ffreestanding -fno-stack-protector -nostdlib"
 
     "$xcc" $xcflags -c "$here/host/plugin.c" -o "$tmp/plugin.o" || return 1
     "$xcc" $xcflags -c "$here/host/plugin_undef.c" -o "$tmp/plugin_undef.o" || return 1
     "$xcc" $xcflags -c "$here/host/plugin_iso.c" -o "$tmp/plugin_iso.o" || return 1
-    "$xcc" $xcflags_tls -c "$here/host/plugin_tls.c" -o "$tmp/plugin_tls.o" || return 1
-    "$xcc" $xcflags_tls -c "$here/host/plugin_gd_tls.c" -o "$tmp/plugin_gd_tls.o" || return 1
+    "$xcc" $xcflags -c "$here/host/plugin_tls.c" -o "$tmp/plugin_tls.o" || return 1
+    "$xcc" $xcflags -c "$here/host/plugin_gd_tls.c" -o "$tmp/plugin_gd_tls.o" || return 1
 
     ld $ldflags --defsym=PLUGIN_BASE=0x0C000000 -o "$tmp/plugin.so" \
        "$tmp/plugin.o" "$libc_so" || return 1

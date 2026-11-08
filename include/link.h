@@ -17,9 +17,9 @@
 #include "dl_elf.h"
 
 struct dl_phdr_info {
-    uint32_t          dlpi_addr;      /* load bias — always 0 here */
+    unsigned long     dlpi_addr;      /* load bias — always 0 here */
     const char       *dlpi_name;      /* "" for the program, else the soname */
-    const Elf32_Phdr *dlpi_phdr;
+    const Elf64_Phdr *dlpi_phdr;
     uint16_t          dlpi_phnum;
     /* glibc extensions */
     unsigned long long dlpi_adds;
@@ -41,7 +41,7 @@ int dl_iterate_phdr(int (*callback)(struct dl_phdr_info *info, size_t size, void
 struct link_map {
     unsigned long    l_addr;    /* load bias — always 0 here */
     char            *l_name;
-    Elf32_Dyn       *l_ld;      /* the object's PT_DYNAMIC, or 0 for none */
+    Elf64_Dyn       *l_ld;      /* the object's PT_DYNAMIC, or 0 for none */
     struct link_map *l_next, *l_prev;
 };
 

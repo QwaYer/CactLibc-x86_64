@@ -1,11 +1,11 @@
 /*
- * dlfcn host-test fixture: an i686 plugin image.
+ * dlfcn host-test fixture: an x86_64 plugin image.
  *
- * Nothing here is executed on the host (it is i686 code) — the test maps it with
- * the real loader and then reads the resulting memory: that the .data image was
- * copied, that the relocation filled in clibc.so's addresses, and that the
- * initialiser ran.  The declarations are local because the fixture is built
- * freestanding for i686 and no 32-bit system headers are needed.
+ * Nothing here is executed — the test maps it with the real loader and then
+ * reads the resulting memory: that the .data image was copied, that the
+ * relocation filled in clibc.so's addresses, and that the initialiser ran.  The
+ * declarations are local because the fixture is built freestanding and no system
+ * headers are needed.
  */
 
 extern unsigned int strlen(const char *s);   /* defined by clibc.so */

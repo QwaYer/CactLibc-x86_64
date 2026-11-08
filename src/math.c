@@ -1,7 +1,7 @@
 /*
  * CactLib math: every function declared in <math.h>, freestanding.
  *
- * The transcendental functions are the i686 x87 instructions (fsqrt, fsin,
+ * The transcendental functions are the x87 instructions (fsqrt, fsin,
  * fcos, fptan, fpatan, fyl2x, f2xm1/fscale), so the results carry the FPU's
  * 64-bit mantissa and no external libm is needed.  The functions that are
  * really integer structure (fabs, frexp, modf, fmod) are plain bit/counting

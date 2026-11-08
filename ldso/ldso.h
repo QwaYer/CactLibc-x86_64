@@ -9,13 +9,13 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef int32_t  s32;
 
-/* The ELF32 structures and the PT_/DT_/R_386_ constants are shared with the
- * libc's dlopen() (both load the same i386 images), so they live in one header
+/* The ELF64 structures and the PT_/DT_/R_X86_64_ constants are shared with the
+ * libc's dlopen() (both load the same x86_64 images), so they live in one header
  * rather than in two copies that can drift. */
 #include "dl_elf.h"
 #include "dl_objects.h"
 
-/* auxv tags (Linux i386) */
+/* auxv tags (Linux x86_64) */
 #define AT_NULL    0
 #define AT_PHDR    3
 #define AT_PHENT   4
@@ -47,7 +47,7 @@ typedef int32_t  s32;
 #define LDSO_MAX_NEEDED 16
 #define LDSO_SCRATCH    0x400000u   /* 4 MiB file scratch (cctkfs libs are << 1 MiB) */
 
-long ldso_sc(unsigned num, unsigned a1, unsigned a2, unsigned a3);
+long ldso_sc(unsigned long num, unsigned long a1, unsigned long a2, unsigned long a3);
 void ldso_die(void);
 
 #endif
