@@ -1,0 +1,952 @@
+#ifndef IOCTL_ABI_H
+#define IOCTL_ABI_H
+
+// ioctl_abi.h — canonical kernel <-> userspace ABI for the VFS-node service
+// model.
+//
+// The OS exposes almost all functionality through VFS nodes.  A process only
+// ever traps for 15 core syscalls (open/close/read/write/ioctl/poll,
+// fork/exec/exit/waitpid, brk/mmap/munmap/mprotect, sigreturn); everything
+// else is reached by open()ing a node and then issuing ioctl/read/write on
+// it.  This header defines every ioctl command and protocol structure used by
+// that relay.  CactLib mirrors this file; keep both in sync.
+//
+// Numbering:
+//   CACT_FDCTL_*   0x3000  ioctl on ANY open fd        -> fd-level ops
+//   CACT_DIRCTL_*  0x3100  ioctl on a DIRECTORY fd     -> basename ops
+//   CACT_PROCCTL_* 0x3200  ioctl on /proc/self|pid/ctl -> process control
+//   CACT_SOCKCTL_* 0x3300  ioctl on a socket fd        -> network control
+//   CACT_NETCTL_*  0x3400  ioctl on /dev/net           -> socket/ping/dns
+//   CACT_SYSCTL_*  0x3500  ioctl on /dev/sys           -> mount/reboot/modules
+//   CACT_PIPECTL_* 0x3600  ioctl on /dev/pipe          -> pipe creation
+//   CACT_CRYPTCTL_* 0x3700 ioctl on /dev/crypto        -> hash/hmac/hkdf/aead/kx/random
+//   CACT_MEMFDCTL_* 0x3800 ioctl on /dev/memfd         -> memfd_create
+//   CACT_EVENTFDCTL_* 0x3900 ioctl on /dev/eventfd      -> eventfd_create
+//   CACT_TIMERFDCTL_* 0x3A00 ioctl on /dev/timerfd      -> timerfd_create
+//   CACT_SIGNALFDCTL_* 0x3B00 ioctl on /dev/signalfd    -> signalfd_create
+//   CACT_EPOLLCTL_*   0x3C00 ioctl on /dev/epoll        -> epoll_create
+//   CACT_WLANCTL_*    0x3F00 ioctl on /dev/wlan0        -> raw 802.11 radio
+//   CACT_MQCTL_*      0x4000 ioctl on a message-queue fd -> POSIX message queues
+// Device-specific ioctls (FB/TIOC, ...) keep their legacy numbers and are
+// routed straight to the node's own ops; they must stay outside 0x3000-0x3FFF.
+//
+// ioctl conventions:
+//   - return value >= 0 is meaningful (new fd, offset, mask, ...)
+//   - return value < 0 is -errno
+//   - every `arg` is a pointer to a user-space struct from this header, unless
+//     documented otherwise.
+
+#include <stdint.h>
+
+// ===========================================================================
+// Final core syscall numbering (15).  Applied when syscalls.h is rewritten in
+// the final migration step (SYS_* names already collide with the legacy table
+// and with mmap.h macros until then):
+//   SYS_OPEN=0 SYS_CLOSE=1 SYS_READ=2 SYS_WRITE=3 SYS_IOCTL=4 SYS_POLL=5
+//   SYS_FORK=6 SYS_EXEC=7 SYS_EXIT=8 SYS_WAITPID=9 SYS_BRK=10 SYS_MMAP=11
+//   SYS_MUNMAP=12 SYS_MPROTECT=13 SYS_SIGRETURN=14  (SYS_COUNT=15)
+// ===========================================================================
+
+// ===========================================================================
+// Shared stat structure (4 words, matches the kernel VFS stat buffer).
+// ===========================================================================
+typedef struct cact_stat {
+    uint32_t inode;
+    uint32_t mode;   // POSIX-ish mode (type bits | rwxrwxrwx)
+    uint32_t size;
+    uint32_t type;   // VFS node type (file/dir/chardev/...)
+} cact_stat_t;
+
+// Rich stat (full POSIX metadata; timestamps zero until the VFS tracks them).
+typedef struct cact_statx {
+    uint32_t ino;
+    uint32_t mode;     // full st_mode (type bits | rwxrwxrwx)
+    uint32_t nlink;
+    uint32_t uid;
+    uint32_t gid;
+    uint32_t size;
+    uint32_t blksize;
+    uint32_t blocks;   // 512-byte blocks
+    uint32_t atime;
+    uint32_t mtime;
+    uint32_t ctime;
+    uint32_t type;     // VFS node type
+} cact_statx_t;
+
+// Filesystem statistics (POSIX struct statfs).
+typedef struct cact_statfs {
+    uint32_t f_type;
+    uint32_t f_bsize;
+    uint32_t f_blocks;
+    uint32_t f_bfree;
+    uint32_t f_bavail;
+    uint32_t f_files;
+    uint32_t f_ffree;
+    uint32_t f_namelen;
+} cact_statfs_t;
+
+// ===========================================================================
+// FD-level commands (ioctl on any open fd).  RANGE 0x3000.
+// ===========================================================================
+#define CACT_FDCTL_DUP        0x3001  // arg=NULL;          returns new fd
+#define CACT_FDCTL_DUP2       0x3002  // arg=cact_fd_arg_t* (newfd)
+#define CACT_FDCTL_FCNTL      0x3003  // arg=cact_fcntl_arg_t*
+#define CACT_FDCTL_LSEEK      0x3004  // arg=cact_lseek_arg_t*; returns new offset
+#define CACT_FDCTL_FSTAT      0x3005  // arg=cact_stat_t*    (out)
+#define CACT_FDCTL_FTRUNCATE  0x3006  // arg=uint32_t* length
+#define CACT_FDCTL_GETDENTS   0x3007  // arg=cact_getdents_arg_t*; returns bytes
+#define CACT_FDCTL_FSYNC      0x3008  // arg=NULL (no-op)
+#define CACT_FDCTL_FSTATX     0x3009  // arg=cact_statx_t*   (out)
+
+typedef struct cact_fd_arg { uint32_t newfd; } cact_fd_arg_t;
+
+// fcntl commands (subset of POSIX)
+#define CACT_F_DUPFD  0
+#define CACT_F_GETFD  1
+#define CACT_F_SETFD  2
+#define CACT_F_GETFL  3
+#define CACT_F_SETFL  4
+
+typedef struct cact_fcntl_arg { uint32_t cmd; uint32_t arg; } cact_fcntl_arg_t;
+
+typedef struct cact_lseek_arg { int32_t offset; uint32_t whence; } cact_lseek_arg_t;
+// whence: 0=SET 1=CUR 2=END
+
+typedef struct cact_getdents_arg { void *buf; uint32_t count; } cact_getdents_arg_t;
+
+// ===========================================================================
+// Directory commands (ioctl on an open DIRECTORY fd).  RANGE 0x3100.
+// All names are single path components resolved relative to the directory.
+// ===========================================================================
+#define CACT_DIRCTL_OPENAT    0x3101  // arg=cact_openat_arg_t*;   returns fd
+#define CACT_DIRCTL_STAT      0x3102  // arg=cact_statat_arg_t*
+#define CACT_DIRCTL_MKDIR     0x3103  // arg=char* name
+#define CACT_DIRCTL_RMDIR     0x3104  // arg=char* name
+#define CACT_DIRCTL_UNLINK    0x3105  // arg=char* name
+#define CACT_DIRCTL_LINK      0x3106  // arg=cact_link_arg_t*   (hard link)
+#define CACT_DIRCTL_SYMLINK   0x3107  // arg=cact_symlink_arg_t*
+#define CACT_DIRCTL_READLINK  0x3108  // arg=cact_readlink_arg_t*
+#define CACT_DIRCTL_RENAME    0x3109  // arg=cact_rename_arg_t*
+#define CACT_DIRCTL_ACCESS    0x310A  // arg=cact_access_arg_t*
+#define CACT_DIRCTL_CHMOD     0x310B  // arg=cact_chmod_arg_t*
+#define CACT_DIRCTL_CHOWN     0x310C  // arg=cact_chown_arg_t*
+#define CACT_DIRCTL_TRUNCATE  0x310D  // arg=cact_truncate_arg_t*
+#define CACT_DIRCTL_MKNOD     0x310E  // arg=cact_mknod_arg_t*
+#define CACT_DIRCTL_CREATE    0x310F  // arg=cact_openat_arg_t* (O_CREAT only)
+#define CACT_DIRCTL_STATX     0x3110  // arg=cact_statx_arg_t*
+#define CACT_DIRCTL_RENAMEAT  0x3111  // arg=cact_renameat_arg_t* (cross-directory)
+#define CACT_DIRCTL_STATFS    0x3112  // arg=cact_statfs_arg_t*
+
+// open flags (Linux/i386-compatible; must mirror the kernel OPEN_* values)
+#define CACT_O_RDONLY 0
+#define CACT_O_WRONLY 1
+#define CACT_O_RDWR   2
+#define CACT_O_CREAT  0x0040
+#define CACT_O_EXCL   0x0080
+#define CACT_O_TRUNC  0x0200
+#define CACT_O_NONBLOCK 0x0800
+
+typedef struct cact_openat_arg { char *name; uint32_t flags; } cact_openat_arg_t;
+typedef struct cact_statat_arg { char *name; cact_stat_t *buf; } cact_statat_arg_t;
+typedef struct cact_link_arg    { char *target; char *newname; } cact_link_arg_t;
+typedef struct cact_symlink_arg { char *target; char *linkname; } cact_symlink_arg_t;
+typedef struct cact_readlink_arg{ char *name; char *buf; uint32_t len; } cact_readlink_arg_t;
+typedef struct cact_rename_arg  { char *oldname; char *newname; } cact_rename_arg_t;
+// Cross-directory rename: newdir is the destination directory path.
+typedef struct cact_renameat_arg { char *oldname; char *newdir; char *newname; } cact_renameat_arg_t;
+typedef struct cact_statx_arg   { char *name; cact_statx_t *buf; uint32_t flags; } cact_statx_arg_t;
+typedef struct cact_statfs_arg  { char *name; cact_statfs_t *buf; } cact_statfs_arg_t;
+#define CACT_AT_SYMLINK_NOFOLLOW 0x100  // statx: do not follow a final symlink
+typedef struct cact_access_arg  { char *name; uint32_t mode; } cact_access_arg_t;  // mode: 4=r 2=w 1=x
+typedef struct cact_chmod_arg   { char *name; uint32_t mode; } cact_chmod_arg_t;
+typedef struct cact_chown_arg   { char *name; uint32_t uid; uint32_t gid; } cact_chown_arg_t;
+typedef struct cact_truncate_arg{ char *name; uint32_t length; } cact_truncate_arg_t;
+typedef struct cact_mknod_arg   { char *name; uint32_t mode; uint32_t dev; } cact_mknod_arg_t;
+
+// ===========================================================================
+// /proc/self/info — binary read-only (44 bytes).
+// ===========================================================================
+typedef struct cact_proc_info {
+    uint32_t pid;
+    uint32_t ppid;
+    uint32_t pgid;
+    uint32_t sid;
+    uint32_t uid;      // real uid
+    uint32_t gid;      // real gid
+    uint32_t euid;     // effective uid
+    uint32_t egid;     // effective gid
+    uint32_t umask;
+    uint32_t state;    // task_state enum value
+    uint32_t flags;    // bit 0 = kernel task
+} cact_proc_info_t;
+
+// /proc/self/cwd — read-only; content is the absolute cwd (no trailing NUL).
+
+// /proc/time — binary read-only (8 bytes), monotonic since boot.
+typedef struct cact_time { uint32_t sec; uint32_t usec; } cact_time_t;
+
+// /proc/wallclock — binary read-only, same cact_time_t layout: civil time,
+// seconds since the Unix epoch, taken from the CMOS RTC read at boot.  This is
+// what CLOCK_REALTIME/gettimeofday()/time() report; /proc/time stays monotonic.
+
+// /proc/uname — binary read-only, layout matches struct utsname (Linux i386).
+typedef struct cact_uname {
+    char sysname[65];
+    char nodename[65];
+    char release[65];
+    char version[65];
+    char machine[65];
+} cact_uname_t;
+
+// ===========================================================================
+// Process control (ioctl on /proc/self/ctl or /proc/<pid>/ctl). RANGE 0x3200.
+// ===========================================================================
+#define CACT_PROCCTL_SETSID      0x3200  // self; arg=NULL; returns new sid
+#define CACT_PROCCTL_SETPGID     0x3201  // self; arg=cact_pgid_arg_t* (self or target)
+#define CACT_PROCCTL_SETUID      0x3202  // self; arg=uint32_t*
+#define CACT_PROCCTL_SETGID      0x3203  // self; arg=uint32_t*
+#define CACT_PROCCTL_UMASK       0x3204  // self; arg=uint32_t* new mask; returns old
+#define CACT_PROCCTL_CHDIR       0x3205  // self; arg=char* path
+#define CACT_PROCCTL_CHROOT      0x3206  // self, root only; arg=char* path
+#define CACT_PROCCTL_SIGNAL      0x3207  // self; arg=cact_signal_arg_t*  (kill(pid,sig))
+#define CACT_PROCCTL_SIGACTION   0x3208  // self; arg=cact_sigaction_arg_t*
+#define CACT_PROCCTL_SIGPROCMASK 0x3209  // self; arg=cact_sigprocmask_arg_t*
+#define CACT_PROCCTL_SIGPENDING  0x320A  // self; arg=uint32_t* (out)
+#define CACT_PROCCTL_SIGSUSPEND  0x320B  // self; arg=uint32_t* mask (blocks)
+#define CACT_PROCCTL_ALARM       0x320C  // self; arg=uint32_t* secs; returns old
+#define CACT_PROCCTL_SETITIMER   0x320D  // self; arg=cact_itimerval_arg_t*
+#define CACT_PROCCTL_SHMGET      0x320E  // self; arg=cact_shmget_arg_t* -> shmid
+#define CACT_PROCCTL_SHMAT       0x320F  // self; arg=cact_shmat_arg_t* -> addr
+#define CACT_PROCCTL_SHMDT       0x3210  // self; arg=uint32_t* addr
+#define CACT_PROCCTL_SHMCTL      0x3211  // self; arg=cact_shmctl_arg_t*
+#define CACT_PROCCTL_THREAD_CREATE 0x3212 // self; arg=cact_thread_create_arg_t*; returns tid
+#define CACT_PROCCTL_THREAD_EXIT 0x3213  // self; arg=uint32_t* exit code (may be NULL)
+#define CACT_PROCCTL_FUTEX       0x3214  // self; arg=cact_futex_arg_t*
+#define CACT_PROCCTL_GET_TID     0x3215  // self; arg=NULL; returns the calling task's tid
+#define CACT_PROCCTL_KILLPG      0x3216  // self; arg=cact_killpg_arg_t*  (killpg(pgid,sig))
+#define CACT_PROCCTL_SIGALTSTACK 0x3217  // self; arg=cact_sigaltstack_arg_t* (sigaltstack(2))
+#define CACT_PROCCTL_SET_TLS     0x3218  // self; arg=uint32_t* (the %gs thread pointer)
+#define CACT_PROCCTL_YIELD       0x3219  // self; arg=NULL; give up the CPU to another runnable task (sched_yield)
+#define CACT_PROCCTL_SIGWAIT     0x321A  // self; arg=cact_sigwait_arg_t* (sigwait/sigwaitinfo/sigtimedwait)
+#define CACT_PROCCTL_SIGQUEUE    0x321B  // self; arg=cact_sigqueue_arg_t* (sigqueue(2))
+
+typedef struct cact_thread_create_arg {
+    void*    entry;      // user entry point (called as entry(arg))
+    uint32_t user_esp;   // initial user stack pointer (libc lays out the frame)
+    uint32_t flags;      // reserved, 0
+    uint32_t tls;        // reserved, 0
+    uint32_t set_child_tid;   // kernel writes the new tid here before it runs (0 = none)
+    uint32_t clear_child_tid; // join futex word the kernel zeroes on exit (0 = none)
+} cact_thread_create_arg_t;
+
+#define CACT_FUTEX_WAIT 0
+#define CACT_FUTEX_WAKE 1
+// The shared variants key the wait by the futex word's PHYSICAL address instead
+// of (address space, uaddr), so two processes that map the same page (shmget/
+// shmat) rendezvous on it.  Used by a pshared semaphore.
+#define CACT_FUTEX_WAIT_SHARED 2
+#define CACT_FUTEX_WAKE_SHARED 3
+
+typedef struct cact_futex_arg {
+    uint32_t uaddr;      // futex word, user VA
+    int32_t  op;         // CACT_FUTEX_WAIT[_SHARED] | CACT_FUTEX_WAKE[_SHARED]
+    int32_t  val;        // WAIT: expected value; WAKE: count
+    int32_t  timeout_ms; // WAIT: <= 0 means wait forever
+} cact_futex_arg_t;
+
+typedef struct cact_pgid_arg { uint32_t pid; uint32_t pgid; } cact_pgid_arg_t;
+typedef struct cact_signal_arg { uint32_t pid; uint32_t signum; } cact_signal_arg_t;
+/* killpg(pgid, sig): signal every task in one process group. */
+typedef struct cact_killpg_arg { uint32_t pgid; uint32_t signum; } cact_killpg_arg_t;
+typedef struct cact_sigaction_arg {
+    uint32_t signum;
+    uint32_t handler;
+    uint32_t flags;      // sa_flags (CACT_SA_*); 0 for plain signal()
+    uint32_t mask;       // sa_mask: signals blocked while this handler runs
+} cact_sigaction_arg_t;
+
+// sa_flags bits the kernel interprets (values match the libc's <signal.h>).
+#define CACT_SA_ONSTACK 0x08000000   // run the handler on the alternate stack
+#define CACT_SA_SIGINFO 0x0004       // handler is void(int, siginfo_t *, void *)
+#define CACT_SA_NODEFER 0x40000000   // the signal is not blocked inside its own handler
+
+// sigaltstack(2) status bits (match SS_* in the libc's <signal.h>).
+#define CACT_SS_ONSTACK 1
+#define CACT_SS_DISABLE 2
+
+// Smallest alternate stack the kernel accepts (match MINSIGSTKSZ in <signal.h>).
+#define CACT_MINSIGSTKSZ 2048
+
+// sigaltstack(2): the requested state in sp/size/flags, the previous state
+// returned in old_*.  Semantics:
+//   {sp==0, size==0, flags==0}  - query only, nothing changes
+//   flags & CACT_SS_DISABLE     - disable the alternate stack
+//   sp!=0, size>=CACT_MINSIGSTKSZ - enable it at [sp, sp+size)
+// old_flags carries CACT_SS_ONSTACK while a handler is running on it.
+typedef struct cact_sigaltstack_arg {
+    uint32_t sp;
+    uint32_t size;
+    uint32_t flags;
+    uint32_t old_sp;
+    uint32_t old_size;
+    uint32_t old_flags;
+} cact_sigaltstack_arg_t;
+typedef struct cact_sigprocmask_arg { uint32_t how; uint32_t set; uint32_t oldset; } cact_sigprocmask_arg_t;
+/* sigwait()/sigwaitinfo()/sigtimedwait(): block until one of `set` is pending,
+   then *consume* it (no handler runs).  `set` is in, the rest out. */
+typedef struct cact_sigwait_arg {
+    uint32_t set;        // in: the signals to wait for (kernel bit mask)
+    int32_t  timeout_ms; // in: < 0 = forever, 0 = poll
+    uint32_t signum;     // out: the signal's index
+    uint32_t code;       // out: si_code
+    uint32_t value;      // out: si_value (sigqueue()'s payload)
+} cact_sigwait_arg_t;
+/* sigqueue(pid, sig, value): like kill(), but the signal carries a value. */
+typedef struct cact_sigqueue_arg { uint32_t pid; uint32_t signum; uint32_t value; } cact_sigqueue_arg_t;
+typedef struct cact_itimerval_arg { uint32_t it_value_ms; uint32_t it_interval_ms; uint32_t old_value_ms; uint32_t old_interval_ms; } cact_itimerval_arg_t;
+typedef struct cact_shmget_arg { uint32_t key; uint32_t size; uint32_t flags; } cact_shmget_arg_t;
+typedef struct cact_shmat_arg  { uint32_t shmid; uint32_t addr; uint32_t flags; } cact_shmat_arg_t;  // addr in/out
+typedef struct cact_shmctl_arg { uint32_t shmid; uint32_t cmd; void *buf; } cact_shmctl_arg_t;
+
+// ===========================================================================
+// Socket control (ioctl on a socket fd). RANGE 0x3300.
+// Data path is plain read()/write() on the socket fd.
+// ===========================================================================
+#define CACT_SOCKCTL_BIND        0x3301  // arg=cact_sockaddr_arg_t*
+#define CACT_SOCKCTL_CONNECT     0x3302  // arg=cact_sockaddr_arg_t*
+#define CACT_SOCKCTL_LISTEN      0x3303  // arg=NULL (backlog fixed)
+#define CACT_SOCKCTL_ACCEPT      0x3304  // arg=cact_accept_arg_t*; returns new fd
+#define CACT_SOCKCTL_SHUTDOWN    0x3305  // arg=uint32_t* how
+#define CACT_SOCKCTL_SETSOCKOPT  0x3306  // arg=cact_sockopt_arg_t*
+#define CACT_SOCKCTL_GETSOCKOPT  0x3307  // arg=cact_sockopt_arg_t*
+#define CACT_SOCKCTL_SENDTO      0x3308  // arg=cact_sendto_arg_t*
+#define CACT_SOCKCTL_RECVFROM    0x3309  // arg=cact_recvfrom_arg_t*
+#define CACT_SOCKCTL_UNIX_BIND   0x330A  // AF_UNIX bind:    arg=cact_unix_addr_t*
+#define CACT_SOCKCTL_UNIX_CONNECT 0x330B // AF_UNIX connect: arg=cact_unix_addr_t*
+#define CACT_SOCKCTL_SENDMSG    0x330C  // payload + SCM_RIGHTS: arg=cact_sendmsg_arg_t*
+#define CACT_SOCKCTL_RECVMSG    0x330D  // payload + SCM_RIGHTS: arg=cact_recvmsg_arg_t*
+#define CACT_SOCKCTL_GETSOCKNAME 0x330E // arg=cact_sockname_arg_t*; local addr out
+#define CACT_SOCKCTL_GETPEERNAME 0x330F // arg=cact_sockname_arg_t*; peer addr out
+// AF_UNIX reuses CACT_SOCKCTL_LISTEN / ACCEPT / SHUTDOWN; data path is plain
+// read()/write() as for AF_INET sockets.  sendmsg/recvmsg ioctls add SCM_RIGHTS
+// fd passing on AF_UNIX stream sockets (payload stays a byte stream; passed fds
+// arrive as an ordered FIFO alongside it).
+//
+
+typedef struct cact_sockaddr_in {
+    uint32_t addr;   // IPv4 big-endian
+    uint32_t port;   // network order
+} cact_sockaddr_in_t;
+
+// AF_UNIX pathname (sockaddr_un layout: the family is implicit — an AF_UNIX
+// fd already knows its family).  NUL-terminated, up to 107 bytes.
+typedef struct cact_unix_addr {
+    char path[108];
+} cact_unix_addr_t;
+
+// sendmsg: write `len` bytes from `buf` to the peer and pass `nfds` open fds
+// (numbers in the sender's fd table, referenced by `fds`).  Return = bytes
+// written.  nfds==0 degenerates to a plain write.
+typedef struct cact_sendmsg_arg {
+    const void *buf;
+    uint32_t    len;
+    const int32_t *fds;
+    uint32_t    nfds;
+} cact_sendmsg_arg_t;
+
+// recvmsg: read up to `cap` bytes into `buf` and install up to `fds_cap`
+// passed descriptors as new fds (written to `fds`, count in `fds_len`).
+// Return = payload bytes read.
+typedef struct cact_recvmsg_arg {
+    void    *buf;
+    uint32_t cap;
+    int32_t *fds;
+    uint32_t fds_cap;
+    uint32_t fds_len;
+} cact_recvmsg_arg_t;
+
+typedef struct cact_sockaddr_arg {
+    uint32_t fd;                 // for ioctls on /dev/net, the target fd
+    cact_sockaddr_in_t addr;
+} cact_sockaddr_arg_t;
+
+typedef struct cact_accept_arg {
+    cact_sockaddr_in_t peer;     // out
+    uint32_t addrlen;            // in/out
+} cact_accept_arg_t;
+
+// getsockname()/getpeername(): the kernel fills addr, and addrlen is in (bytes
+// the caller's buffer can hold) then out (bytes written), like accept's.
+typedef struct cact_sockname_arg {
+    cact_sockaddr_in_t addr;     // out
+    uint32_t addrlen;            // in/out
+} cact_sockname_arg_t;
+
+// socket option levels/names (kernel socket.h values; relay passes them through)
+//   level: SOL_SOCKET=1, IPPROTO_TCP=6
+//   SOL_SOCKET names: SO_REUSEADDR=2, SO_KEEPALIVE=9, SO_ERROR=4
+//   IPPROTO_TCP names: TCP_NODELAY=1
+typedef struct cact_sockopt_arg {
+    uint32_t level;              // SOL_SOCKET=1 / IPPROTO_TCP=6
+    uint32_t optname;            // kernel socket.h option number
+    uint32_t val;                // in for setsockopt
+    uint32_t val_out;            // out for getsockopt
+} cact_sockopt_arg_t;
+
+typedef struct cact_sendto_arg {
+    cact_sockaddr_in_t dst;      // only for UDP
+    void *buf;
+    uint32_t len;
+} cact_sendto_arg_t;
+
+typedef struct cact_recvfrom_arg {
+    cact_sockaddr_in_t src;      // out (only for UDP)
+    void *buf;
+    uint32_t len;
+} cact_recvfrom_arg_t;
+
+
+// ===========================================================================
+// /dev/net control. RANGE 0x3400.
+// ===========================================================================
+#define CACT_NETCTL_SOCKET       0x3401  // arg=cact_socket_arg_t*; returns fd
+#define CACT_NETCTL_PING         0x3402  // arg=cact_ping_arg_t*
+#define CACT_NETCTL_DNS_RESOLVE  0x3403  // arg=cact_dns_arg_t*
+#define CACT_NETCTL_NETCFG       0x3404  // arg=cact_netcfg_arg_t* (root): set link config
+#define CACT_NETCTL_SOCKETPAIR   0x3405  // arg=cact_socketpair_arg_t*; fds[2] out
+#define CACT_NETCTL_NETCFG_GET   0x3406  // arg=cact_netcfg_get_t* (out): read link config
+#define CACT_NETCTL_PING_WAIT    0x3407  // arg=cact_ping_wait_arg_t*; returns RTT us or <0
+#define CACT_NETCTL_IFNAME       0x3408  // arg=char[CACT_IFNAME_MAX] (out): NIC name, -ENODEV if none
+#define CACT_NETCTL_IFACE_COUNT  0x3409  // no arg; returns the number of interfaces (NIC + lo)
+#define CACT_NETCTL_IFACE_GET    0x340A  // arg=cact_iface_get_arg_t*; in index, out interface info
+#define CACT_NETCTL_ARP_COUNT    0x340B  // no arg; returns the number of live ARP entries
+#define CACT_NETCTL_ARP_GET      0x340C  // arg=cact_arp_get_arg_t*; in index, out ARP entry
+
+// Interface name as the driver registered it ("eth0", "wlan0").  A separate
+// ioctl rather than a field in cact_netcfg_get_t so that binaries built against
+// the older struct keep working: the kernel copies exactly CACT_IFNAME_MAX
+// bytes, so a caller must pass a buffer of at least that size.
+#define CACT_IFNAME_MAX          16
+
+typedef struct cact_socket_arg { uint32_t domain; uint32_t type; uint32_t proto; } cact_socket_arg_t;
+typedef struct cact_socketpair_arg { uint32_t type; uint32_t fds[2]; } cact_socketpair_arg_t;
+typedef struct cact_ping_arg { uint32_t dst_ip; uint32_t id; uint32_t seq; } cact_ping_arg_t;
+// Blocking probe: send one echo request and wait for its reply.  Returns the
+// round-trip time in microseconds, or <0 on timeout.  The out fields describe
+// the reply (source address in host order, ICMP message length in bytes).
+typedef struct cact_ping_wait_arg {
+    uint32_t dst_ip;      // host order
+    uint32_t id;
+    uint32_t seq;
+    uint32_t timeout_ms;
+    uint32_t rtt_us_out;
+    uint32_t src_ip_out;  // host order
+    uint32_t bytes_out;
+} cact_ping_wait_arg_t;
+typedef struct cact_dns_arg { char *name; uint32_t *out_ip; } cact_dns_arg_t;
+
+// Link configuration set by the network manager.  ip_host/mask 0 removes the
+// interface address, gateway_host/dns_host 0 removes route / resolver server.
+typedef struct cact_netcfg_arg {
+    uint32_t ip_host;
+    uint32_t netmask_host;
+    uint32_t gateway_host;
+    uint32_t dns_host;
+} cact_netcfg_arg_t;
+
+// Snapshot of the current link configuration (all host byte order).
+typedef struct cact_netcfg_get {
+    uint32_t ip_host;
+    uint32_t netmask_host;
+    uint32_t gateway_host;
+    uint32_t dns_host;
+    uint8_t  mac[6];       // NIC hardware address
+    uint32_t link_up;      // 1 when a NIC is registered / the link is up
+} cact_netcfg_get_t;
+
+// Per-interface view (CACT_NETCTL_IFACE_GET).  Index 0 is the NIC, index 1 is
+// the loopback interface (`lo`); CACT_NETCTL_IFACE_COUNT reports how many are
+// present.  The old single-NIC ioctls above stay for binaries built against
+// them.
+#define CACT_IFACE_FLAG_LOOPBACK  0x1u
+
+typedef struct cact_iface_info {
+    char     name[CACT_IFNAME_MAX]; // NUL-terminated ("eth0", "wlan0", "lo")
+    uint32_t ip_host;               // 0 = unnumbered
+    uint32_t netmask_host;          // 0 = no address
+    uint32_t gateway_host;          // 0 = no default route
+    uint32_t dns_host;              // 0 = no resolver
+    uint8_t  mac[6];                // all-zero for a non-Ethernet interface (lo)
+    uint32_t link_up;               // 1 when the interface is up
+    uint32_t flags;                 // CACT_IFACE_FLAG_*
+} cact_iface_info_t;
+
+typedef struct cact_iface_get_arg {
+    uint32_t index;                 // in
+    cact_iface_info_t info;         // out
+} cact_iface_get_arg_t;
+
+// ARP / IPv4 neighbor table (CACT_NETCTL_ARP_COUNT / CACT_NETCTL_ARP_GET).  The
+// table is learned from the ARP traffic the kernel sees; entries age out after
+// 60 s.  Same COUNT+GET shape as the interface view above.  Byte-compatible with
+// `CactArpEntry` in rust_net/src/arp.rs.
+#define CACT_ARP_TABLE_MAX       16
+
+typedef struct cact_arp_entry {
+    uint32_t ip_host;               // neighbor IPv4 address, host order
+    uint8_t  mac[6];                // neighbor hardware address
+    uint16_t _pad;                  // explicit padding keeps the u32 fields aligned
+    uint32_t age_ms;                // ms since the mapping was last seen
+    uint32_t flags;                 // reserved (0)
+} cact_arp_entry_t;
+
+typedef struct cact_arp_get_arg {
+    uint32_t index;                 // in
+    cact_arp_entry_t entry;         // out
+} cact_arp_get_arg_t;
+
+// ===========================================================================
+// /dev/sys control (privileged, root only). RANGE 0x3500.
+// ===========================================================================
+#define CACT_SYSCTL_MOUNT        0x3501  // arg=cact_mount_arg_t*
+#define CACT_SYSCTL_UMOUNT       0x3502  // arg=char* target
+#define CACT_SYSCTL_REBOOT       0x3503  // arg=uint32_t* cmd
+#define CACT_SYSCTL_MODULE_LOAD  0x3504  // arg=cact_module_arg_t*
+#define CACT_SYSCTL_MODULE_UNLOAD 0x3505 // arg=char* name
+#define CACT_SYSCTL_BLKDEV_RESCAN 0x3506 // arg=char* disk name; returns #partitions
+#define CACT_SYSCTL_SETHOSTNAME   0x3507 // arg=char* name (root): set the host name
+#define CACT_SYSCTL_GET_CONSOLE_LOGLEVEL 0x3508 // arg=int*: read the console log level
+#define CACT_SYSCTL_SET_CONSOLE_LOGLEVEL 0x3509 // arg=int* (root): set console log level 0..7
+#define CACT_SYSCTL_SETWALLCLOCK  0x350A // arg=cact_time_t* (root): set the civil wall clock
+
+typedef struct cact_mount_arg { char *src; char *target; char *fstype; } cact_mount_arg_t;
+typedef struct cact_module_arg { char *path; uint32_t vendor_id; uint32_t device_id; } cact_module_arg_t;
+
+#define CACT_REBOOT_RESTART  0x01234567u
+#define CACT_REBOOT_HALT     0xCDEF0123u
+#define CACT_REBOOT_POWEROFF 0x4321FEDCu
+
+// ===========================================================================
+// /dev/pipe control. RANGE 0x3600.
+// ===========================================================================
+#define CACT_PIPECTL_CREATE 0x3601  // arg=uint32_t fds[2] (out)
+
+// ===========================================================================
+// /dev/crypto control. RANGE 0x3700.
+//
+// Exposes the in-kernel crypto primitives (the same algorithms the rustls
+// cact_crypto provider offers) to userspace.  Every arg is a struct from this
+// header; input buffers are read-only user pointers, output arrays are
+// embedded in the structs, output buffers are separate user pointers with an
+// explicit capacity.  All `alg` fields use the CACT_CRYPT_* constants below.
+// ===========================================================================
+#define CACT_CRYPTCTL_RANDOM      0x3701  // arg=cact_crypt_random_arg_t*
+#define CACT_CRYPTCTL_HASH        0x3702  // arg=cact_crypt_hash_arg_t*
+#define CACT_CRYPTCTL_HMAC        0x3703  // arg=cact_crypt_hmac_arg_t*  (sign)
+#define CACT_CRYPTCTL_HMAC_VERIFY 0x3704  // arg=cact_crypt_hmac_arg_t*  (tag in)
+#define CACT_CRYPTCTL_HKDF        0x3705  // arg=cact_crypt_hkdf_arg_t*
+#define CACT_CRYPTCTL_AEAD        0x3706  // arg=cact_crypt_aead_arg_t*
+#define CACT_CRYPTCTL_KX_KEYGEN   0x3707  // arg=cact_crypt_kx_keygen_arg_t*
+#define CACT_CRYPTCTL_KX_DERIVE   0x3708  // arg=cact_crypt_kx_derive_arg_t*
+#define CACT_CRYPTCTL_SIG_VERIFY  0x3709  // arg=cact_crypt_sig_verify_arg_t*
+                                          // returns 0 valid, -1 invalid, -EINVAL bad args
+#define CACT_CRYPTCTL_X509_VERIFY  0x370A  // arg=cact_crypt_x509_verify_arg_t*
+                                          // returns 0 valid, -1 invalid, -EINVAL bad args
+
+// signature schemes for CACT_CRYPTCTL_SIG_VERIFY (order matches Cact_SIG_* in
+// cact_crypto/src/sig.rs)
+#define CACT_SIG_ECDSA_P256_SHA256 0
+#define CACT_SIG_ECDSA_P384_SHA384 1
+#define CACT_SIG_RSA_PKCS1_SHA256  2
+#define CACT_SIG_RSA_PKCS1_SHA384  3
+#define CACT_SIG_RSA_PKCS1_SHA512  4
+#define CACT_SIG_RSA_PSS_SHA256    5
+#define CACT_SIG_RSA_PSS_SHA384    6
+#define CACT_SIG_RSA_PSS_SHA512    7
+
+// algorithm selectors
+#define CACT_CRYPT_SHA256     0   // hash / hmac / hkdf: SHA-256 family
+#define CACT_CRYPT_SHA384     1   // hash / hmac / hkdf: SHA-384 family
+#define CACT_CRYPT_AES128_GCM 0   // aead
+#define CACT_CRYPT_AES256_GCM 1   // aead
+#define CACT_CRYPT_KX_X25519  0   // key exchange
+#define CACT_CRYPT_KX_P256    1   // key exchange (secp256r1)
+#define CACT_CRYPT_OP_SEAL    0   // aead: encrypt
+#define CACT_CRYPT_OP_OPEN    1   // aead: decrypt
+
+// fixed sizes (bytes)
+#define CACT_CRYPT_SHA256_LEN  32
+#define CACT_CRYPT_SHA384_LEN  48
+#define CACT_CRYPT_MAX_TAG     64
+#define CACT_CRYPT_NONCE_LEN   12
+#define CACT_CRYPT_GCM_TAG_LEN 16
+#define CACT_CRYPT_PUB_MAX     65   // X25519: 32, P-256: 65 (uncompressed SEC1)
+#define CACT_CRYPT_SECRET_LEN  32
+
+typedef struct cact_crypt_random_arg {
+    uint8_t *buf;         // out: random bytes
+    uint32_t len;
+} cact_crypt_random_arg_t;
+
+typedef struct cact_crypt_hash_arg {
+    uint32_t alg;         // CACT_CRYPT_SHA256 / CACT_CRYPT_SHA384
+    const uint8_t *data;  // in
+    uint32_t data_len;
+    uint8_t digest[64];   // out: 32 or 48 bytes used
+} cact_crypt_hash_arg_t;
+
+typedef struct cact_crypt_hmac_arg {
+    uint32_t alg;         // CACT_CRYPT_SHA256 / CACT_CRYPT_SHA384
+    const uint8_t *key;   // in
+    uint32_t key_len;
+    const uint8_t *data;  // in
+    uint32_t data_len;
+    uint8_t tag[64];      // out (sign) / in (verify): 32 or 48 bytes used
+} cact_crypt_hmac_arg_t;
+
+typedef struct cact_crypt_hkdf_arg {
+    uint32_t alg;              // CACT_CRYPT_SHA256 / CACT_CRYPT_SHA384
+    const uint8_t *salt;       // in (may be NULL when salt_len == 0)
+    uint32_t salt_len;
+    const uint8_t *ikm;        // in
+    uint32_t ikm_len;
+    const uint8_t *info;       // in (may be NULL when info_len == 0)
+    uint32_t info_len;
+    uint8_t *out;              // out
+    uint32_t out_len;          // out length requested / written
+} cact_crypt_hkdf_arg_t;
+
+typedef struct cact_crypt_aead_arg {
+    uint32_t alg;         // CACT_CRYPT_AES128_GCM / CACT_CRYPT_AES256_GCM
+    uint32_t op;          // CACT_CRYPT_OP_SEAL / CACT_CRYPT_OP_OPEN
+    const uint8_t *key;   // in: 16 (AES-128) or 32 (AES-256) bytes
+    uint32_t key_len;
+    uint8_t nonce[12];    // in
+    const uint8_t *aad;   // in (may be NULL when aad_len == 0)
+    uint32_t aad_len;
+    const uint8_t *in;    // in: plaintext (SEAL) or ciphertext||tag (OPEN)
+    uint32_t in_len;
+    uint8_t *out;         // out: ciphertext||tag (SEAL) or plaintext (OPEN)
+    uint32_t out_cap;     // capacity of out
+    uint32_t out_len;     // out: bytes written
+} cact_crypt_aead_arg_t;
+
+typedef struct cact_crypt_kx_keygen_arg {
+    uint32_t alg;         // CACT_CRYPT_KX_X25519 / CACT_CRYPT_KX_P256
+    uint8_t pub[65];      // out: X25519 32 bytes / P-256 65 bytes
+    uint8_t priv[32];     // out
+} cact_crypt_kx_keygen_arg_t;
+
+typedef struct cact_crypt_kx_derive_arg {
+    uint32_t alg;         // CACT_CRYPT_KX_X25519 / CACT_CRYPT_KX_P256
+    uint8_t priv[32];     // in
+    uint8_t peer_pub[65]; // in: X25519 32 bytes / P-256 65 bytes (uncompressed)
+    uint8_t shared[32];   // out
+} cact_crypt_kx_derive_arg_t;
+
+// Signature verification.  `pubkey` is the key exactly as a certificate carries
+// it — the SubjectPublicKeyInfo subjectPublicKey contents: a SEC1 point for
+// ECDSA, a DER RSAPublicKey for RSA.  `msg` is hashed internally with the
+// scheme's digest, so callers pass the message, not a prehash.
+typedef struct cact_crypt_sig_verify_arg {
+    uint32_t scheme;              // CACT_SIG_*
+    const uint8_t *pubkey;        // in
+    uint32_t pubkey_len;
+    const uint8_t *msg;           // in
+    uint32_t msg_len;
+    const uint8_t *sig;           // in (DER for ECDSA, raw for RSA)
+    uint32_t sig_len;
+} cact_crypt_sig_verify_arg_t;
+
+// Certificate chain verification (rustls-webpki in the kernel).  `chain` and
+// `roots` are buffers of concatenated DER certificates (each self-delimiting);
+// the leaf comes first in `chain`, and `roots` are the trust anchors the caller
+// wants to accept — the kernel keeps no trust policy of its own.
+//
+// `tls_scheme` != 0 additionally requires `hs_sig` to be a valid signature over
+// `hs_msg` made with the leaf's key, which is how a TLS 1.3 client checks the
+// server's CertificateVerify message.
+typedef struct cact_crypt_x509_verify_arg {
+    const uint8_t *chain;      // in: concatenated DER, leaf first
+    uint32_t chain_len;
+    const uint8_t *roots;      // in: concatenated DER trust anchors
+    uint32_t roots_len;
+    const char    *hostname;   // in: NUL-terminated name the leaf must match
+    uint64_t unix_time;        // in: verification time, seconds since epoch
+    uint32_t tls_scheme;       // in: TLS SignatureScheme code, 0 = skip
+    const uint8_t *hs_msg;     // in: signed handshake message
+    uint32_t hs_msg_len;
+    const uint8_t *hs_sig;     // in
+    uint32_t hs_sig_len;
+} cact_crypt_x509_verify_arg_t;
+
+// ===========================================================================
+// /dev/memfd control. RANGE 0x3800.
+// ===========================================================================
+#define CACT_MEMFDCTL_CREATE 0x3801  // arg=cact_memfd_create_arg_t*; returns new fd
+
+// memfd_create(2) flags
+#define CACT_MFD_CLOEXEC 0x0001
+
+typedef struct cact_memfd_create_arg {
+    char     *name;      // optional, NUL-terminated (may be NULL)
+    uint32_t  flags;     // CACT_MFD_CLOEXEC
+} cact_memfd_create_arg_t;
+
+// ===========================================================================
+// /dev/eventfd control. RANGE 0x3900.
+// ===========================================================================
+#define CACT_EVENTFDCTL_CREATE 0x3901  // arg=cact_eventfd_create_arg_t*; returns new fd
+
+// eventfd(2) flags (create-time only)
+#define CACT_EFD_SEMAPHORE 0x0001
+#define CACT_EFD_NONBLOCK  0x0800      // same bit as O_NONBLOCK
+#define CACT_EFD_CLOEXEC   0x80000     // same bit as O_CLOEXEC
+
+typedef struct cact_eventfd_create_arg {
+    uint32_t initval;   // initial counter value
+    uint32_t flags;     // CACT_EFD_*
+} cact_eventfd_create_arg_t;
+
+// ===========================================================================
+// /dev/timerfd control. RANGE 0x3A00.
+// ===========================================================================
+#define CACT_TIMERFDCTL_CREATE 0x3A01  // arg=cact_timerfd_create_arg_t*; returns new fd
+#define CACT_TIMERFD_SETTIME   0x3A10  // timerfd fd: arg=cact_timerfd_spec_t*
+#define CACT_TIMERFD_GETTIME   0x3A11  // timerfd fd: arg=cact_timerfd_spec_t*
+
+// timerfd_create(2) flags
+#define CACT_TFD_NONBLOCK      0x0800
+#define CACT_TFD_CLOEXEC       0x80000
+#define CACT_TFD_TIMER_ABSTIME 0x0001
+
+typedef struct cact_timerfd_create_arg {
+    int32_t  clockid;   // CLOCK_MONOTONIC / CLOCK_REALTIME (same clock)
+    uint32_t flags;     // CACT_TFD_*
+} cact_timerfd_create_arg_t;
+
+// ms-based timer spec (1 tick = 10 ms, 100 Hz monotonic clock).
+typedef struct cact_timerfd_spec {
+    uint32_t flags;           // in: CACT_TFD_TIMER_ABSTIME for SETTIME
+    uint32_t it_value_ms;     // in/out: first expiry (0 = disarm)
+    uint32_t it_interval_ms;  // in/out: periodic re-arm interval (0 = one-shot)
+    uint32_t old_value_ms;    // out: previous remaining ms to expiry
+    uint32_t old_interval_ms; // out: previous interval ms
+} cact_timerfd_spec_t;
+
+// ===========================================================================
+// /dev/signalfd control. RANGE 0x3B00.
+// ===========================================================================
+#define CACT_SIGNALFDCTL_CREATE 0x3B01 // arg=cact_signalfd_create_arg_t*; returns new fd
+#define CACT_SIGNALFD_SETMASK   0x3B02 // signalfd fd: arg=cact_signalfd_create_arg_t*
+
+#define CACT_SFD_NONBLOCK 0x0800
+#define CACT_SFD_CLOEXEC  0x80000
+
+typedef struct cact_signalfd_create_arg {
+    uint32_t mask;   // sigset_t (kernel bitmask, bits 0..12)
+    uint32_t flags;  // CACT_SFD_*
+} cact_signalfd_create_arg_t;
+
+// ===========================================================================
+// /dev/epoll control. RANGE 0x3C00.
+// ===========================================================================
+#define CACT_EPOLLCTL_CREATE 0x3C01  // arg=cact_epoll_create_arg_t*; returns new fd
+#define CACT_EPOLL_CTL       0x3C10  // epoll fd: arg=cact_epoll_ctl_arg_t*
+#define CACT_EPOLL_WAIT      0x3C11  // epoll fd: arg=cact_epoll_wait_arg_t*
+
+#define CACT_EPOLL_CLOEXEC 0x80000
+
+// EPOLL_CTL_ADD/MOD/DEL (Linux values)
+#define CACT_EPOLL_CTL_ADD 1
+#define CACT_EPOLL_CTL_MOD 2
+#define CACT_EPOLL_CTL_DEL 3
+
+typedef struct cact_epoll_create_arg {
+    uint32_t flags;   // CACT_EPOLL_CLOEXEC
+} cact_epoll_create_arg_t;
+
+typedef struct cact_epoll_ctl_arg {
+    int32_t  op;       // CACT_EPOLL_CTL_*
+    int32_t  fd;       // target fd in the current task
+    uint32_t events;   // interest mask (EPOLLIN/EPOLLOUT/EPOLLERR/EPOLLHUP/...)
+    uint64_t data;     // opaque user data (epoll_data.u64)
+} cact_epoll_ctl_arg_t;
+
+typedef struct cact_epoll_wait_arg {
+    void    *events;      // user buffer: struct epoll_event[]
+    uint32_t maxevents;   // capacity (>= 1)
+    int32_t  timeout_ms;  // -1 = block, 0 = non-blocking, >0 = deadline
+} cact_epoll_wait_arg_t;
+
+// ===========================================================================
+// tty control (ioctls on /dev/ttyN and /dev/tty). RANGE 0x3D00.
+//
+// These mirror the shape of Linux's VT_* ioctls, but take pointers because
+// the generic sys_ioctl path only forwards pointer arguments to a node.
+// ===========================================================================
+#define CACT_TTYCTL_GET_INDEX   0x3D00  // arg=int* -> VT index of this node (0 = active)
+#define CACT_TTYCTL_VT_ACTIVATE 0x3D01  // arg=int* -> switch the console to VT n
+#define CACT_TTYCTL_VT_GETSTATE 0x3D02  // arg=cact_vt_state_t*
+#define CACT_TTYCTL_SET_CTTY    0x3D03  // arg=int* -> make VT n the controlling terminal
+#define CACT_TTYCTL_GET_CTTY    0x3D04  // arg=int* -> controlling VT index (0 = none)
+#define CACT_TTYCTL_SET_FG      0x3D05  // arg=uint32_t* -> console foreground process group (0 = none);
+                                        // the session leader claims it (tcsetpgrp) and the line
+                                        // discipline delivers ^C/^\ /^Z/SIGWINCH to that whole group
+#define CACT_TTYCTL_VT_OPENQRY     0x3D06  // arg=int* -> number of a free VT to allocate (0 = cap reached)
+#define CACT_TTYCTL_VT_DISALLOCATE 0x3D07  // arg=int* -> release VT n (highest only, never the active one)
+
+typedef struct cact_vt_state {
+    uint16_t v_active;   // active VT
+    uint16_t v_count;    // number of allocated VTs (grows/shrinks as VTs come and go)
+} cact_vt_state_t;
+
+// ===========================================================================
+// /dev/ptmx + /dev/pts/<n> control. RANGE 0x3E00.
+// ===========================================================================
+#define CACT_PTYCTL_GET_NUMBER  0x3E00  // master: arg=int* -> pts number
+#define CACT_PTYCTL_LOCK        0x3E01  // master: arg=int* -> 1 lock, 0 unlock the slave
+
+// ===========================================================================
+// Wireless control (ioctls on /dev/wlan0). RANGE 0x3F00.
+//
+// The 802.11 station engine lives in the kernel (cact80211): scan, open-system
+// auth/association, the 802.11<->802.3 datapath and CCMP.  Userspace (the
+// wljoin utility) is the WPA2 supplicant: it reads the BSS list, asks the
+// kernel to join a BSS, runs the 4-way handshake over EAPOL, and installs the
+// keys.  read() serves the AP list as text.
+// ===========================================================================
+#define CACT_WLANCTL_SCAN        0x3F00  // arg=NULL;          rescan, returns AP count
+#define CACT_WLANCTL_GET_BSS     0x3F01  // arg=cact_wlan_bss_t*     (index in, BSS out)
+#define CACT_WLANCTL_CONNECT     0x3F02  // arg=cact_wlan_connect_t* (auth + assoc)
+#define CACT_WLANCTL_DISCONNECT  0x3F03  // arg=NULL
+#define CACT_WLANCTL_SET_KEY     0x3F05  // arg=cact_wlan_key_t*     (TK / GTK install)
+#define CACT_WLANCTL_STATUS      0x3F06  // arg=cact_wlan_status_t*  (out)
+#define CACT_WLANCTL_EAPOL_TX    0x3F07  // arg=cact_wlan_eapol_t*   (send EAPOL payload)
+#define CACT_WLANCTL_EAPOL_RX    0x3F08  // arg=cact_wlan_eapol_t*   (out; len 0 = none)
+
+#define CACT_WLAN_SSID_MAX   33
+#define CACT_WLAN_RSN_MAX    64
+#define CACT_WLAN_KEY_MAX    32
+#define CACT_WLAN_EAPOL_MAX  512
+
+#define CACT_WLAN_KEY_PAIRWISE 0    // TK: enables the CCMP data path
+#define CACT_WLAN_KEY_GROUP    1    // GTK: group-addressed frames
+
+// One BSS from the engine's scan list.  GET_BSS takes `index` in and fills the
+// rest; the RSN IE is what the supplicant echoes in msg2/msg4.
+typedef struct cact_wlan_bss {
+    uint32_t index;                        // in: which entry to fetch
+    uint8_t  bssid[6];
+    uint8_t  ssid[CACT_WLAN_SSID_MAX];
+    uint8_t  ssid_len;
+    uint8_t  channel;
+    int8_t   rssi;
+    uint8_t  privacy;                      // 1 = the AP advertises privacy (WPA2)
+    uint8_t  rsn_len;
+    uint8_t  rsn[CACT_WLAN_RSN_MAX];
+} cact_wlan_bss_t;
+
+// Join a BSS found by SCAN (the engine runs auth + association).
+typedef struct cact_wlan_connect {
+    uint8_t  bssid[6];
+    uint8_t  ssid[CACT_WLAN_SSID_MAX];
+    uint8_t  ssid_len;
+} cact_wlan_connect_t;
+
+typedef struct cact_wlan_key {
+    uint32_t kind;                         // CACT_WLAN_KEY_*
+    uint32_t key_id;                       // GTK key id (0 for the pairwise key)
+    uint32_t key_len;
+    uint8_t  key[CACT_WLAN_KEY_MAX];
+} cact_wlan_key_t;
+
+// One EAPOL payload (no 802.11/LLC framing — the engine adds it), both ways.
+typedef struct cact_wlan_eapol {
+    uint8_t  dst[6];                       // tx: the AP; rx: the source
+    uint32_t len;                          // bytes in data[]  (rx 0 = none yet)
+    uint8_t  data[CACT_WLAN_EAPOL_MAX];
+} cact_wlan_eapol_t;
+
+typedef struct cact_wlan_status {
+    int32_t  linked;                       // 1 = associated (datapath usable)
+    uint8_t  mac[6];                       // this station's MAC
+    uint8_t  bssid[6];
+    uint32_t channel;
+    uint8_t  ssid[CACT_WLAN_SSID_MAX];
+    int32_t  last_error;                   // -errno of the last failure (0 = none);
+                                           // the only channel for bring-up errors
+    // Data-path counters for bring-up diagnosis (the engine never prints):
+    // read them after traffic has been attempted to see whether the netdev
+    // TX/RX moved anything and where it failed.
+    uint32_t tx_data;                      // data frames handed down by the stack
+    uint32_t tx_group;                     //   of those, broadcast/multicast (GTK)
+    uint32_t tx_fail;                      // data frames that did not reach the air
+    uint32_t rx_data;                      // data frames delivered up to the stack
+    uint32_t rx_group;                     //   of those, broadcast/multicast
+    uint32_t rx_bad;                       // our AP's protected frames dropped (MIC)
+    uint32_t rx_nokey;                     // protected, dropped: the key is not installed
+    uint32_t rx_other;                     // data frames from another BSS (dropped)
+    uint32_t tx_drop_noassoc;              // TX dropped: not associated (link down)
+    uint32_t tx_drop_nokey;                // TX dropped: frame's key is not installed
+    uint32_t beacon_rx;                    // beacons from our BSSID (0 => link watchdog)
+    uint32_t deauth_rx;                    // deauth/disassoc from our BSSID (link drop)
+} cact_wlan_status_t;
+
+// ===========================================================================
+// POSIX message queues (ioctl on a message-queue fd). RANGE 0x4000.
+//
+// mq_open(3) is open("/dev/mqueue/<name>") — the kernel mounts a small queue
+// filesystem there (Cact/fs/mqueue) whose files are queues — plus one
+// CACT_MQCTL_INIT to fix the limits at creation.  Sending and receiving are
+// ioctls rather than read()/write() because a message carries a priority in
+// both directions, which a byte stream cannot.  mq_unlink(3) is unlink().
+// ===========================================================================
+#define CACT_MQCTL_INIT    0x4001  // mqueue fd, once at creation: arg=cact_mq_attr_t* (mq_maxmsg/mq_msgsize in)
+#define CACT_MQCTL_SEND    0x4002  // mqueue fd: arg=cact_mq_msg_t* (in: msg_ptr/msg_len/msg_prio/timeout_ms)
+#define CACT_MQCTL_RECEIVE 0x4003  // mqueue fd: arg=cact_mq_msg_t* (in: msg_ptr/msg_len; out: msg_len/msg_prio)
+#define CACT_MQCTL_GETATTR 0x4004  // mqueue fd: arg=cact_mq_attr_t* (out)
+#define CACT_MQCTL_SETATTR 0x4005  // mqueue fd: arg=cact_mq_attr_t* (in mq_flags; out: the previous attr)
+#define CACT_MQCTL_NOTIFY  0x4006  // mqueue fd: arg=cact_mq_notify_arg_t* (register/unregister)
+
+// Limits the kernel enforces (the libc's <mqueue.h> mirrors them).  A name is
+// a directory entry of the queue filesystem; a queue's depth and message size
+// are bounded, and all queues' messages together share one byte budget so a
+// full queue cannot exhaust the kernel heap.
+#define CACT_MQ_NAME_MAX       127
+#define CACT_MQ_PRIO_MAX       32
+#define CACT_MQ_MAXMSG_LIMIT   256
+#define CACT_MQ_MSGSIZE_LIMIT  8192
+#define CACT_MQ_BYTES_LIMIT    (4u * 1024u * 1024u)
+#define CACT_MQ_DEFAULT_MAXMSG 10
+#define CACT_MQ_DEFAULT_MSGSIZE 8192
+
+// struct mq_attr as syscall and userspace agree on it (long == int32_t on
+// i686; the reserved words keep glibc's struct mq_attr layout).
+typedef struct cact_mq_attr {
+    int32_t mq_flags;     // O_NONBLOCK
+    int32_t mq_maxmsg;    // INIT: in; GETATTR/SETATTR-out: the queue's depth
+    int32_t mq_msgsize;   // INIT: in; GETATTR/SETATTR-out: max message bytes
+    int32_t mq_curmsgs;   // out: messages queued right now
+    int32_t reserved[4];
+} cact_mq_attr_t;
+
+// One send/receive.  `timeout_ms` < 0 waits forever, 0 is a poll (EAGAIN when
+// it would block), > 0 is a relative deadline (ETIMEDOUT); O_NONBLOCK on the
+// fd forces the poll case whatever the caller asked.
+typedef struct cact_mq_msg {
+    char    *msg_ptr;     // in (send) / out (receive): the message bytes
+    uint32_t msg_len;     // in: bytes to send / capacity of msg_ptr; out (receive): bytes received
+    uint32_t msg_prio;    // in (send): 0..CACT_MQ_PRIO_MAX-1; out (receive): the message's priority
+    int32_t  timeout_ms;
+} cact_mq_msg_t;
+
+// mq_notify(2).  signo == 0 unregisters (SIGEV_NONE, or a NULL sigevent);
+// otherwise it is the signal's *mask bit* — the libc's SIG* value, i.e.
+// 1 << index, NOT the index CACT_PROCCTL_SIGNAL takes — delivered to the
+// registering process when a message arrives on a queue it left empty.
+typedef struct cact_mq_notify_arg {
+    uint32_t signo;
+} cact_mq_notify_arg_t;
+
+#endif

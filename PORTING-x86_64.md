@@ -1,0 +1,215 @@
+# План работ: CactLibc x86_64 (CactOS 3.0.0)
+
+Форк от `2.0.0` (i686, SYSENTER). `MAJOR` → 3 по правилу «`MAJOR` = смена
+архитектурного поколения»: libc перелинковывается под ABI ядра 3.0.0, который
+уже портирован (`CactKernel-x86_64`, `PORTING-x86_64.md`, решения 5/8/9).
+
+Этот файл — план, а не обещание. Инвентарь снят по коду; при расхождении верить
+коду.
+
+## Что уже хорошо (и почему порт меньше, чем кажется)
+
+Host-тесты (`tests/run-host.sh`) собирают `src/*.c` **компилятором сборочной
+машины** и сравнивают с glibc. Сборочная машина — x86_64, значит весь C-код
+libc уже сегодня компилируется и исполняется как 64-битный: на старте порта
+зелёны 15 юнитов из 16 (см. «Проверки»). Архитектурно-зависимыми остаются
+ассемблер, syscall-соглашение, ELF-загрузчик, TLS-сегмент, ширина `uintptr_t` и
+структуры, разделяемые с ядром.
+
+Второй источник — ядро: `ioctl_abi.h`, `siginfo_t`/`ucontext_t`, раскладка
+стартового стека и `mmap_args_t` уже 64-битные там. Их надо *синхронизировать*,
+а не проектировать.
+
+## Инвентарь 32-битных поверхностей
+
+### Соглашение о syscall
+
+- `include/syscall.h`, `src/syscall.c` — `SYSENTER` (`EAX`=номер, `EBX`/`ESI`/
+  `EDI`=аргументы, `ECX`/`EDX` забирает CPU). Ядро 3.0.0 перешло на `SYSCALL`/
+  `IRETQ`: `rax`=номер, `rdi`/`rsi`/`rdx`=аргументы
+  (`Cact/kernel/core/syscall_entries.asm`). Таблица 15 номеров не изменилась.
+- Ключевая ловушка: цель и хост теперь **одна и та же** архитектура, поэтому
+  `#if defined(__i386__)` (заглушки для host-тестов) больше не различает цель и
+  хост. Нужен явный признак цели.
+
+### Ассемблер — 4 файла
+
+- `src/start.S` — PIC через `%ebx`/GOT (в long mode не нужен; PIC —
+  RIP-relative), `argc`/`argv`/`envp` со смещений 0/4/8 от `%ebp`.
+- `ldso/start.S` — то же плюс `movl %esp,%ebx` как «оригинальный стек».
+- `src/setjmp.S` — 6 слов i386 (`ebx/esi/edi/ebp/esp/eip`); в x86_64 callee-saved
+  — `rbx/rbp/r12-r15` плюс `rsp`/`rip`, то есть 8 слов.
+- `src/thread_start.S` — `andl $-16,%esp`, возврат результата в `%eax`.
+
+### `uintptr_t` зафиксирован в 32 битах
+
+- `include/stdint.h` — `typedef int32_t intptr_t; typedef uint32_t uintptr_t;`.
+  Меняется на 64 бита; от этого автоматически «вырастают» `brk`/`mmap`
+  (`stdlib.c`, `unistd.c`, `mman.c` — все уже кастуют через `uintptr_t`),
+  `thread_local.c` (диапазоны стеков), `signal.c`.
+
+### TLS
+
+- `include/tls_layout.h`, `src/tls_static.c`, `src/thread_local.c`,
+  `src/pthread.c`, `include/sys/ldt.h` — блок variant II через **`%gs`**-базу;
+  ядро 3.0.0 отдаёт TLS пользователя в **`%fs`** (`IA32_FS_BASE`), а `%gs`
+  занят per-CPU ядра (`swapgs`). Арифметика раскладки (`mods[0]` упирается в
+  thread pointer, `tp + off + offset - total`) в long mode та же (variant II),
+  меняется сегмент и ширина слова TCB.
+- `set_thread_area()` передаёт ядру `uint32_t`; `CACT_PROCCTL_SET_TLS` в
+  `ioctl_abi.h` 3.0.0 принимает `uint64_t`.
+- `___tls_get_addr` (три подчёркивания) — символ i386-модели general-dynamic; в
+  x86_64 компилятор зовёт `__tls_get_addr` и передаёт в `rdi` указатель на пару
+  `{ uint64 modid, uint64 offset }`.
+
+### ELF-загрузчики
+
+- `include/dl_elf.h` — все `Elf32_*` и `R_386_*`; `ldso/ldso.c` и
+  `src/dlfcn.c` работают на `u32`-адресах. В x86_64 — `Elf64_*`, `SHT_RELA`,
+  `R_X86_64_*`; `.rela.dyn`/`.rela.plt` несут адденды, поэтому
+  `R_X86_64_RELATIVE` обязан *писать* адденд (в i386 с `SHT_REL` он уже лежал в
+  цели и ничего делать не надо).
+- ELF-заголовок образа читается по сырым смещениям (`0x2A`, `0x2C`, `0x1C` в
+  `ldso.c`) — в `Elf64_Ehdr` они другие.
+
+### Структуры, разделяемые с ядром
+
+- `include/ioctl_abi.h` — предок 64-битной версии; ядро уже расширило
+  `cact_stat_t.size`, `cact_statx_t`, `cact_lseek_arg_t.offset`,
+  `cact_truncate_arg_t.length`, `cact_time_t.sec`, `user_esp`, `tls`,
+  `set_child_tid`, футекс-`uaddr`, `handler`, `sp`, `mq_attr_t`. Файл должен
+  стать **байт-в-байт** ядровым.
+- `include/stat.h` — `st_size` 32 бита под `cact_stat_t.size`.
+- Раскладка стартового стека (`src/start.S`, `ldso/ldso.c`) — тройка
+  `argc`/`argv_arr`/`envp_arr` сохранена, но слова 64-битные, и `argc` приходит
+  выровненным на 16 (`task_exec.rs`, решение 6.4).
+- `siginfo_t`/`ucontext_t` (`signal.h`, `ucontext.h`) — уже описаны через
+  `void*`/`unsigned long`, на x86_64 совпадают с `cact_siginfo_t`/
+  `cact_ucontext_t` ядра; правки не требуются, но появляется проверка размера.
+- `mmap_args_t` (`mman.c`) — **остаётся 32-битным**: это осознанное решение 9
+  ядра (окно `mmap` ниже 4 ГиБ).
+
+### Сборка
+
+- `cross/i686-cact-clang.ini` → `x86_64-cact-clang.ini` (`-m64`, `cpu=x86_64`);
+  `meson.build` — `ld -m elf_x86_64`, `-m32` → `-m64`, arch-строка;
+  `libc.ld`/`ldso/ldso.ld` — комментарии про USER_FRAME_CEIL мертвы (адреса
+  0x08000000/0x10000000/0x18000000 остаются валидными: они внутри
+  `[USER_SPACE_START, KERNEL_BASE)` и ниже `MMAP_BASE`).
+- `VERSION` → `3.0.0`.
+- `src/udivdi3.c` — 32-битный helper `__udivdi3`; у x86_64 есть аппаратное
+  деление, clang его не зовёт. Удаляется.
+
+## Решения
+
+1. **Признак цели — макрос `__CACT__`,** выдаваемый сборкой (`libc_c_args`,
+   `pic_c_args`, cross-file), а не `__x86_64__`: цель и хост совпали по
+   архитектуре, и только этот макрос отличает «собираем для CactOS» от
+   «собираем libc на хосте для теста». Условные ветки в `syscall.h` и
+   `thread_local.c` переходят на него.
+2. **Syscall — `syscall`/`iretq`,** аргументы `rdi`/`rsi`/`rdx`, номер в `rax`
+   (решение 5 ядра). Инлайновые `__syscall0..3` становятся однострочными;
+   `syscall()` перестаёт быть отдельным файлом с «кадрами» — он один insn.
+3. **TLS в `%fs`** (решение 5 ядра): база ставится через
+   `CACT_PROCCTL_SET_TLS` (`uint64_t`), `local-exec`-доступ — `movq %fs:0` плюс
+   смещение, которое линкер сам кладёт как `offset - total`, поэтому инвариант
+   «модуль программы упирается в thread pointer» сохраняется без изменений.
+   `___tls_get_addr` заменяется на `__tls_get_addr` (двумя подчёркиваниями) с
+   64-битной парой `tls_index`.
+4. **ELF64 + `SHT_RELA`.** Лоадеры читают только `Elf64_*`; поддерживаются
+   `R_X86_64_64/PC32/GLOB_DAT/JUMP_SLOT/RELATIVE/COPY` и TLS
+   `DTPMOD64/DTPOFF64/TPOFF64/GOTTPOFF`. `R_X86_64_RELATIVE` пишет адденд.
+   GOT/PLT у модулей по-прежнему не поддерживаются (ядерное решение 7), но
+   общий `.so`-путь (clibc.so, плагины `dlopen`) их *использует* — PLT-записи
+   обслуживаются как `JUMP_SLOT`, это и раньше было так.
+5. **Адреса фиксированной линковки не двигаем** (0x08000000/0x10000000/
+   0x18000000): они остаются внутри пользовательского полупространства 3.0.0.
+6. **`mmap_args_t`, `mmap`-окно, `cact_sockaddr_in` — 32 бита** (решение 9
+   ядра), а не «указатель ⇒ 64».
+7. **`VERSION` → 3.0.0**, arch-строка `.x86_64`, `uname.machine` уже `x86_64`
+   на стороне ядра.
+
+## Этапы
+
+### Фаза 0 — тулчейн и версия
+
+`cross/x86_64-cact-clang.ini`; `meson.build` (`elf_x86_64`, `-m64`, arch);
+`libc.ld`/`ldso/ldso.ld` — комментарии; `VERSION` 3.0.0; README — `i686` →
+`x86_64`.
+
+**Milestone:** `ninja -C build-meson` собирает `clibc.so`, `ld.so`, `start.o`;
+`readelf -h` даёт `ELF64`/`EM_X86_64`. Пока как i386-логика в 64-битной обёртке
+— это нормально, линковка на этом этапе ещё опирается на старый asm.
+
+### Фаза 1 — syscall-соглашение
+
+`include/syscall.h` — `syscall`/`rdi/rsi/rdx`, макрос `__CACT__`;
+`src/syscall.c` — то же тело; `src/thread_local.c` — `%rsp`.
+
+**Milestone:** host-тесты зелёные (заглушечная ветка не задействована), цель
+собирается.
+
+### Фаза 2 — ассемблер
+
+`src/start.S` (RIP-relative, тройка на `0/8/16(%rbp)`, выравнивание 16),
+`ldso/start.S`, `src/setjmp.S` + `include/setjmp.h` (8 слов), `src/thread_start.S`.
+
+**Milestone:** объекты собираются, `setjmp`-контракт зафиксирован в заголовке
+(`jmp_buf[8]`).
+
+### Фаза 3 — ABI-заголовки
+
+`ioctl_abi.h` ← ядро; `stdint.h` (`intptr_t`/`uintptr_t` 64 бита);
+`stat.h.st_size`; `dl_objects.h`; `tls_layout.h` (слово TCB); проверка размеров
+`siginfo_t`/`ucontext_t`.
+
+**Milestone:** host-тесты зелёные; `_Static_assert` на `cact_stat_t` проходит в
+цели.
+
+### Фаза 4 — TLS в `%fs`
+
+`tls_static.c` (`movq %fs:0`, `__tls_get_addr`, 64-битная пара),
+`thread_local.c`/`sys/ldt.h` (`uint64_t` база), `pthread.c` (база нового потока),
+тесты.
+
+**Milestone:** юнит `tls` зелёный; в цели `fs_base` ставится из libc.
+
+### Фаза 5 — ELF64
+
+`dl_elf.h`, `ldso/ldso.c` (все адресные поля — `uintptr_t`/`unsigned long`),
+`src/dlfcn.c`, фикстуры host-теста (`plugin.ld`, флаги) → x86_64.
+
+**Milestone:** юнит `dlfcn` зелёный на x86_64-плагинах; `readelf -r clibc.so`
+показывает только поддерживаемые релокации.
+
+### Фаза 6 — остаток и тесты
+
+Удаление `udivdi3.c`; sweep `u32`-адресов; host-тест `time` (конфликт
+`struct timespec` с glibc); README.
+
+**Milestone:** `tests/run-host.sh` — все 16 юнитов зелёные; `ninja -C
+build-meson` чистый.
+
+## Проверки
+
+- **Host-тесты** — основной рантайм-тест: `tests/run-host.sh` (или
+  `meson test -C build-meson`). 15/16 юнитов зелёные **до** порта; юнит `time`
+  не компилируется из-за `struct timespec` в тесте (не в libc) — чинится в
+  Фазе 6. Осторожно: скрипт идёт под `set -e`, поэтому падает на первом же
+  неудачном компиляторе и «зелёный» вердикт может быть неполным.
+- **Кросс-сборка** — `meson setup build-meson --cross-file
+  cross/x86_64-cact-clang.ini && ninja -C build-meson`.
+- **Релокации** — `readelf -r build-meson/clibc.so`; всё, что вне
+  поддерживаемого набора, — повод для разбора, а не для тишины.
+- **Проверка на железе/в QEMU** — за ядром (`CactKernel-x86_64`,
+  `cact_check.sh`); libc отдаёт `clibc.so`/`ld.so`/`start.o` соседям.
+
+## Открытые вопросы
+
+- **Какую TLS-модель реально выберёт clang для `-fPIC` `clibc.so`** — от этого
+  зависит, какие из `DTPMOD64`/`DTPOFF64`/`GOTTPOFF` реально попадут в
+  `.rela.dyn`. Проверяется `readelf -r` на собранной цели, а не рассуждением.
+- **`cact_sign`/`cctkfs`** — libc не собирает `.cctk`; порт модулей — сторона
+  ядра и драйверов.
+- **Общие с соседями заголовки** (`dl_objects.h`, `tls_layout.h`) — по одному
+  экземпляру на репозиторий; при расхождении верю компилятору.
