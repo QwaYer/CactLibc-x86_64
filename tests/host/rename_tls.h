@@ -1,6 +1,6 @@
 /* Host-test renames for src/tls_static.c (see rename_tz.h for the rationale).
  *
- * set_thread_area goes to the shim's recorder so the test can see the %gs base
+ * set_thread_area goes to the shim's recorder so the test can see the %fs base
  * the libc tried to install. */
 #ifndef CACT_HOST_RENAME_TLS_H
 #define CACT_HOST_RENAME_TLS_H

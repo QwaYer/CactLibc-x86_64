@@ -141,12 +141,14 @@ int     nio_open_parent(const char *p, char *base, size_t max)
 int     nio_map(int r)                         { return r; }
 
 /* set_thread_area is a recorder: the tls unit checks that the block it built
- * was handed to the kernel as the %gs base.  The libc's <sys/ldt.h> struct
- * user_desc has base_addr as its second word, which is all we need. */
-struct host_user_desc { unsigned int entry_number, base_addr, limit, flags; };
+ * was handed to the kernel as the %fs base.  The libc's <sys/ldt.h> struct
+ * user_desc has entry_number first and base_addr — a pointer-width word — second,
+ * so this mirror has to keep that shape for the offset to match. */
+struct host_user_desc { unsigned int entry_number; unsigned long base_addr;
+                        unsigned int limit, flags; };
 
-int          cact_host_tls_calls;
-unsigned int cact_host_tls_base;
+int           cact_host_tls_calls;
+unsigned long cact_host_tls_base;
 
 int cact_host_set_thread_area(struct host_user_desc *ud) {
     cact_host_tls_calls++;

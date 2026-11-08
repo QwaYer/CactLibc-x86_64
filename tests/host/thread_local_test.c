@@ -2,19 +2,20 @@
  *
  * The registry half of thread_local.c (finding a thread's errno slot by stack
  * range) needs real threads and the real kernel, so it is not exercised here;
- * what is checked is that the %gs-base call carries the right procctl and base. */
+ * what is checked is that the %fs-base call carries the right procctl and base. */
 
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 #include <errno.h>
 
-/* Layout-compatible with the libc's <sys/ldt.h> struct user_desc where it
- * matters: base_addr is the second word. */
+/* Layout-compatible with the libc's <sys/ldt.h> struct user_desc: entry_number,
+ * then base_addr — a pointer-width word, so it sits at offset 8 on x86_64. */
 struct user_desc {
-    unsigned int entry_number;
-    unsigned int base_addr;
-    unsigned int limit;
-    unsigned int flags;
+    unsigned int  entry_number;
+    unsigned long base_addr;
+    unsigned int  limit;
+    unsigned int  flags;
 };
 
 int  cact_set_thread_area(struct user_desc *u_info);
@@ -23,11 +24,20 @@ int *cact_tl_errno_location(void);
 extern int           cact_host_ctl_calls;
 extern unsigned long cact_host_ctl_cmd;
 extern unsigned int  cact_host_ctl_arg0;
+extern unsigned char cact_host_ctl_arg[24];
 extern int           cact_host_ctl_ret;
 
 #define CACT_PROCCTL_SET_TLS 0x3218
 
 static int checks, fails;
+
+/* The kernel reads a uint64_t base (CACT_PROCCTL_SET_TLS), so the test reads the
+ * argument the same way rather than through the first-word echo. */
+static uint64_t sent_base(void) {
+    uint64_t b = 0;
+    memcpy(&b, cact_host_ctl_arg, sizeof b);
+    return b;
+}
 
 int main(void) {
     struct user_desc ud;
@@ -44,10 +54,10 @@ int main(void) {
     checks++;
     if (r != 0 || cact_host_ctl_calls != 1 ||
         cact_host_ctl_cmd != CACT_PROCCTL_SET_TLS ||
-        cact_host_ctl_arg0 != 0x12345000u) {
+        sent_base() != 0x12345000ul) {
         fails++;
-        printf("FAIL set: r=%d calls=%d cmd=%#lx base=%#x\n",
-               r, cact_host_ctl_calls, cact_host_ctl_cmd, cact_host_ctl_arg0);
+        printf("FAIL set: r=%d calls=%d cmd=%#lx base=%#lx\n",
+               r, cact_host_ctl_calls, cact_host_ctl_cmd, (unsigned long)sent_base());
     }
 
     /* Clearing the base is a base of 0, not an error. */
@@ -56,9 +66,10 @@ int main(void) {
     ud.base_addr = 0;
     cact_set_thread_area(&ud);
     checks++;
-    if (cact_host_ctl_calls != 1 || cact_host_ctl_arg0 != 0) {
+    if (cact_host_ctl_calls != 1 || sent_base() != 0) {
         fails++;
-        printf("FAIL clear: calls=%d base=%#x\n", cact_host_ctl_calls, cact_host_ctl_arg0);
+        printf("FAIL clear: calls=%d base=%#lx\n", cact_host_ctl_calls,
+               (unsigned long)sent_base());
     }
 
     /* NULL is rejected in the libc, without reaching the kernel. */

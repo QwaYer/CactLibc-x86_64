@@ -24,8 +24,8 @@ uint32_t cact_tls_plan(cact_tls_layout_t *lay, uint32_t nmods);
 void    *cact_tls_fill(void *block, const cact_tls_layout_t *lay);
 void     __cact_tls_start(void);
 
-extern unsigned int cact_host_tls_calls;
-extern unsigned int cact_host_tls_base;
+extern unsigned int  cact_host_tls_calls;
+extern unsigned long cact_host_tls_base;
 
 static int checks, fails;
 
@@ -58,27 +58,33 @@ int main(void) {
         cku32("empty count", l.count, 0);
     }
 
-    /* one 4-byte .tdata + 4-byte .tbss, align 4 */
+    /* one 4-byte .tdata + 4-byte .tbss, align 4.  The block is rounded up to 16
+     * so the thread pointer is 16-byte aligned (the x86_64 ABI requires it), and
+     * every module moves up with it — module 0 still ends at the thread
+     * pointer. */
     {
         cact_tls_layout_t l;
         static int tdata = 0x42424242;
+        _Alignas(16) unsigned char blk[64];
         memset(&l, 0, sizeof l);
         mod(&l, 0, (unsigned long)&tdata, 4, 8, 4);
         uint32_t total = cact_tls_plan(&l, 1);
-        cku32("one mod off", l.mods[0].off, 0);
-        cku32("one mod total", total, 8);       /* the linker's assumption: end at the TP */
+        cku32("one mod off", l.mods[0].off, 8);      /* the 8 bytes of 16-padding */
+        cku32("one mod total", total, 16);      /* the linker's assumption: end at the TP */
         cku32("one mod count", l.count, 1);
 
         /* the block: image copied, .tbss and padding zeroed, TCB self-pointing */
-        unsigned char blk[64];
         memset(blk, 0xAA, sizeof blk);
         void *tcb = cact_tls_fill(blk, &l);
         checks++;
         if (tcb != blk + total) { fails++; printf("FAIL tcb position %p vs %p\n", tcb, blk + total); }
         checks++;
-        if (memcmp(blk, &tdata, 4) != 0) { fails++; printf("FAIL image not copied\n"); }
-        for (int i = 4; i < (int)total; i++) {
-            if (blk[i] != 0) { fails++; printf("FAIL blk[%d]=%#x not zeroed\n", i, blk[i]); break; }
+        if (memcmp(blk + l.mods[0].off, &tdata, 4) != 0) { fails++; printf("FAIL image not copied\n"); }
+        for (uint32_t i = 0; i < (uint32_t)total; i++) {
+            int in_image = i >= l.mods[0].off && i < l.mods[0].off + 4;
+            if (!in_image && blk[i] != 0) {
+                fails++; printf("FAIL blk[%u]=%#x not zeroed\n", i, blk[i]); break;
+            }
         }
         checks++;
         if (*(unsigned long *)tcb != (unsigned long)tcb) {
@@ -87,9 +93,10 @@ int main(void) {
                    *(unsigned long *)tcb, (unsigned long)tcb);
         }
         /* the address the TPOFF formula would produce for a variable at TLS
-         * offset v is TCB + (v - total): check it lands inside the image. */
+         * offset v of the program's module is TCB + (v - memsz): check it lands
+         * in the image. */
         checks++;
-        if ((unsigned char *)tcb + (0 - (long)total) != blk) {
+        if ((unsigned char *)tcb + (0 - (long)l.mods[0].memsz) != blk + l.mods[0].off) {
             fails++;
             printf("FAIL TPOFF arithmetic\n");
         }
@@ -102,9 +109,9 @@ int main(void) {
         mod(&l, 0, 0, 4, 4, 4);                 /* the program */
         mod(&l, 1, 0, 8, 8, 16);                /* a library */
         uint32_t total = cact_tls_plan(&l, 2);
-        cku32("two mod1 off", l.mods[1].off, 0);
-        cku32("two mod0 off", l.mods[0].off, 8);
-        cku32("two total", total, 12);
+        cku32("two mod1 off", l.mods[1].off, 4);
+        cku32("two mod0 off", l.mods[0].off, 12);
+        cku32("two total", total, 16);
     }
 
     /* a non-power-of-two (or zero/one) align must not be honoured */
@@ -115,8 +122,8 @@ int main(void) {
         mod(&l, 1, 0, 1, 1, 0);
         mod(&l, 2, 0, 1, 1, 1);
         uint32_t total = cact_tls_plan(&l, 3);
-        cku32("bogus align offs", l.mods[1].off, 4);   /* 1 + 3 waste = aligned to 4 */
-        cku32("bogus align total", total, 9);
+        cku32("bogus align offs", l.mods[1].off, 11);  /* 1 + 3 waste = aligned to 4, then +7 */
+        cku32("bogus align total", total, 16);
     }
 
     /* more modules than fit: the extra ones are dropped, not written past */
@@ -132,8 +139,7 @@ int main(void) {
     /* A thread's block: cact_tls_block_new returns the thread pointer directly,
      * so the whole fill path and the TPOFF arithmetic can be checked here.
      * (__cact_tls_start's base is only checked for "one call, non-zero" below:
-     * struct user_desc.base_addr is 32-bit by ABI, so on a 64-bit host the
-     * pointer would be truncated before any recorder could see it.) */
+     * the block it builds is unreachable from here.) */
     {
         static int image[2] = { 0x11111111, 0x22222222 };
         memset(&cact_tls_layout, 0, sizeof cact_tls_layout);
@@ -145,20 +151,22 @@ int main(void) {
 
         void *tcb = cact_tls_block_new();
         checks++;
-        if (!tcb || ((unsigned long)tcb & 3)) {      /* 4 is what %gs:0 needs */
+        if (!tcb || ((unsigned long)tcb & 15)) {     /* 16 is what %fs:0 needs */
             fails++;
-            printf("FAIL block_new: tcb %p not 4-aligned\n", tcb);
+            printf("FAIL block_new: tcb %p not 16-aligned\n", tcb);
         } else {
             checks++;
             if (*(unsigned long *)tcb != (unsigned long)tcb) {
                 fails++;
                 printf("FAIL block_new: TCB does not self-point\n");
             }
-            /* where the R_386_TLS_TPOFF value would land a variable at offset v */
+            /* where the R_X86_64_TPOFF64 value would land a variable at offset v
+             * of the program's module: TCB + (v - memsz) */
             checks++;
-            if (memcmp((void *)((unsigned long)tcb - cact_tls_layout.total), image, 8) != 0) {
+            if (memcmp((void *)((unsigned long)tcb
+                                - cact_tls_layout.mods[0].memsz), image, 8) != 0) {
                 fails++;
-                printf("FAIL block_new: image not at TCB - total\n");
+                printf("FAIL block_new: image not at TCB - memsz\n");
             }
         }
 
@@ -168,7 +176,7 @@ int main(void) {
         checks++;
         if (cact_host_tls_calls != 1 || cact_host_tls_base == 0) {
             fails++;
-            printf("FAIL start: calls=%u base=%#x\n", cact_host_tls_calls, cact_host_tls_base);
+            printf("FAIL start: calls=%u base=%#lx\n", cact_host_tls_calls, cact_host_tls_base);
         }
     }
 
@@ -215,10 +223,10 @@ int main(void) {
          * thread pointer, and every module must have been placed at all. */
         memset(&l, 0, sizeof l);
         mod(&l, 0, 0, 4, 8, 4);
-        cku32("plan_reserved: total", cact_tls_plan_reserved(&l, 1, 1024), 1032);
+        cku32("plan_reserved: total", cact_tls_plan_reserved(&l, 1, 1024), 1040);
         cku32("plan_reserved: count", l.count, 1);
         cku32("plan_reserved: spare", l.spare, 1024);
-        cku32("plan_reserved: mod0 off", l.mods[0].off, 1024);
+        cku32("plan_reserved: mod0 off", l.mods[0].off, 1032);
         cku32("plan_reserved: top invariant", l.mods[0].off + l.mods[0].memsz, l.total);
         cku32("plan_reserved: mod0 id", l.mods[0].id, 1);
         cku32("plan_reserved: next_id", l.next_id, 2);

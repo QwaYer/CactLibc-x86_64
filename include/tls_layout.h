@@ -11,36 +11,36 @@
  * every thread's block from it (__cact_tls_start for the main thread,
  * pthread_create for the rest).
  *
- * i386 variant II: the block grows upward and the TCB (thread control block)
- * sits immediately after its end.  `%gs` names the TCB, `%gs:0` holds the TCB's
+ * x86_64 variant II: the block grows upward and the TCB (thread control block)
+ * sits immediately after its end.  `%fs` names the TCB, `%fs:0` holds the TCB's
  * own address, and a variable at TLS offset v of a module whose block offset is
- * o is at `TCB + o + v - total` — which is what R_386_TLS_TPOFF resolves to.
+ * o is at `TCB + o + v - total` — which is what R_X86_64_TPOFF64 resolves to.
  *
  * The bottom of the block is spare room (CACT_TLS_RESERVE bytes, the same for
  * every thread): the block is laid out once, before _start, but an object
  * dlopen()'d later may carry its own __thread, so ld.so keeps a slice free and
  * cact_tls_module_add() hands it out as those objects arrive (see
  * src/tls_static.c).  It also means a program with no __thread of its own still
- * gets a block, so %gs is usable the moment it loads one.
+ * gets a block, so %fs is usable the moment it loads one.
  *
  * Two TLS models can reach a shared object.  GNU ld reduces static TLS — what
  * -ftls-model=initial-exec emits for a library, and what a program's own code
- * uses (local-exec) — to R_386_TLS_TPOFF, so both resolve against this layout.
+ * uses (local-exec) — to R_X86_64_TPOFF64, so both resolve against this layout.
  * General-dynamic (a shared object's default) instead reaches the variable
- * through ___tls_get_addr() with the linker's { module id, offset } pair: the
+ * through __tls_get_addr() with the linker's { module id, offset } pair: the
  * loaders fill that pair from the same layout (each module's `id`, and the
  * symbol's offset), and cact_tls_addr() turns it into the address.  The module
  * is looked up by `id`, never by table position, because the table is compacted
  * when a dlclose() forgets a module.
  *
  * `vaddr` and the TCB's self pointer are written as `unsigned long` rather than
- * uintptr_t: this libc's <stdint.h> pins uintptr_t to 32 bits, and the host test
- * harness compiles one side of this struct for a 64-bit machine, so a builtin
- * type keeps the two sides agreeing on the width they each need.
+ * uintptr_t: the host test harness compiles one side of this struct against the
+ * system headers and the other against this libc's, so a builtin type keeps the
+ * two sides agreeing on the width they each need.
  */
 
 #define CACT_TLS_MAX_MODULES 8
-/* The TCB: the self pointer the ABI's `%gs:0` read needs, plus one spare word. */
+/* The TCB: the self pointer the ABI's `%fs:0` read needs, plus one spare word. */
 #define CACT_TLS_TCB_SIZE    (2 * sizeof(void *))
 /* Spare room at the bottom of every thread's block, for the objects that arrive
  * after the layout was made.  It is a per-thread cost, so it is deliberately
@@ -71,17 +71,23 @@ typedef struct {
  * Returns `total` — 0 when there is nothing to place.
  *
  * The program's module is placed at the TOP, so its block ends exactly at the
- * thread pointer.  That is not a style choice: gcc/clang with -fPIE emit
- * local-exec accesses (`mov %gs:0,reg` then a displacement) and the *linker*
+ * thread pointer.  That is not a style choice: clang with -fPIE emits
+ * local-exec accesses (`mov %fs:0,reg` then a displacement) and the *linker*
  * resolves the displacement to `offset_of_variable - memsz_of_the_program's
  * TLSeGMENT`, which only lands on the variable if the program's block ends at
  * the thread pointer.  Anything else (a library's own __thread) would use
  * initial-exec/general-dynamic and pick its offset dynamically, which is why
- * those models can be laid out freely below. */
+ * those models can be laid out freely below.
+ *
+ * The total is then rounded up to 16 and every module moves with it: the x86_64
+ * ABI requires the thread pointer to be 16-byte aligned (a `long double` or
+ * vector __thread variable would fault otherwise), and shifting all offsets by
+ * the same amount keeps module 0 ending exactly at the thread pointer. */
 static inline uint32_t cact_tls_plan_inline(cact_tls_layout_t *lay, uint32_t nmods)
 {
     uint32_t n = nmods < CACT_TLS_MAX_MODULES ? nmods : CACT_TLS_MAX_MODULES;
     uint32_t off = 0;
+    uint32_t pad;
     int i;
 
     for (i = (int)n - 1; i >= 1; i--) {
@@ -97,6 +103,12 @@ static inline uint32_t cact_tls_plan_inline(cact_tls_layout_t *lay, uint32_t nmo
         off = (off + a - 1) & ~(a - 1);
         lay->mods[0].off = off;
         off += lay->mods[0].memsz;
+    }
+
+    pad = (16u - (off & 15u)) & 15u;
+    if (pad) {
+        for (i = 0; i < (int)n; i++) lay->mods[i].off += pad;
+        off += pad;
     }
 
     lay->count = n;
@@ -156,7 +168,7 @@ extern cact_tls_layout_t cact_tls_layout;
  * with TLS `id` lives, given the thread pointer `tp` (the TCB).  The module is
  * found by id — never by table position, since the table is compacted on
  * dlclose() — and the answer is `tp + off - total + offset`, the same
- * arithmetic R_386_TLS_TPOFF bakes into a static access.  Returns 0 when there
+ * arithmetic R_X86_64_TPOFF64 bakes into a static access.  Returns 0 when there
  * is no such module (which is a valid address in no program, so it doubles as
  * the error value). */
 static inline void *cact_tls_addr(const cact_tls_layout_t *lay, uint32_t id,

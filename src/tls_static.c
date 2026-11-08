@@ -3,7 +3,8 @@
  *
  * ld.so fills `cact_tls_layout` from the loaded objects' PT_TLS segments before
  * the program's _start runs; this file turns that layout into one block per
- * thread and installs it as the thread's %gs base.  The layout always keeps
+ * thread and installs it as the thread's %fs base (the kernel programs
+ * IA32_FS_BASE from CACT_PROCCTL_SET_TLS).  The layout always keeps
  * CACT_TLS_RESERVE bytes of spare room at the bottom of the block, so an object
  * whose own `__thread` only turns up later — a dlopen()'d plugin — can still be
  * given a place; cact_tls_module_add() is that half of the story.
@@ -43,7 +44,7 @@ uint32_t cact_tls_plan(cact_tls_layout_t *lay, uint32_t nmods) {
 }
 
 /* Build a block: each module's initialised image, zeroed .tbss, and a TCB whose
- * first word is its own address ("%gs:0" is the thread pointer).  Returns the
+ * first word is its own address ("%fs:0" is the thread pointer).  Returns the
  * thread pointer (the TCB, i.e. the block's end). */
 void *cact_tls_fill(void *block, const cact_tls_layout_t *lay) {
     unsigned char *base = (unsigned char *)block;
@@ -77,19 +78,19 @@ void __cact_tls_start(void) {
 
     if (cact_tls_layout.total == 0) return;      /* no static TLS in this program */
     block = cact_tls_alloc();
-    if (!block) return;                          /* no memory: %gs stays unset */
+    if (!block) return;                          /* no memory: %fs stays unset */
     tcb = cact_tls_fill(block, &cact_tls_layout);
     tls_block_register(tcb);
 
     memset(&ud, 0, sizeof ud);
     ud.entry_number = (unsigned)-1;              /* "pick one" — no LDT here */
-    ud.base_addr    = (unsigned)(uintptr_t)tcb;
+    ud.base_addr    = (unsigned long)tcb;
     set_thread_area(&ud);
 }
 
 /* A new thread's block, built the same way; the caller keeps it alive.  Returns
  * the thread pointer to hand to CACT_PROCCTL_THREAD_CREATE, or 0 for an empty
- * layout (which the kernel reads as "leave %gs alone"); a layout ld.so built
+ * layout (which the kernel reads as "leave %fs alone"); a layout ld.so built
  * always carries the reserve, so this only ever returns 0 before one is
  * published at all. */
 void *cact_tls_block_new(void) {
@@ -158,24 +159,21 @@ void cact_tls_module_drop(uint32_t off) {
     }
 }
 
-/* i386's default TLS model reaches a shared object's `__thread` through this
+/* x86_64's default TLS model reaches a shared object's `__thread` through this
  * function: the compiler passes a pointer to a two-word { ti_module, ti_offset }
- * pair that the linker put in .got, and the loaders filled in the defining
- * object's TLS module id and the variable's offset inside that module.  Every
- * module — the program's, a library's, and one that arrived with dlopen() — has
- * a slice of the *same* per-thread static block, so the address is just that
- * slice's offset added to the thread pointer (%gs, whose first word holds the
- * TCB's own address).  There is no per-module DTV to allocate, which is the
- * whole reason this is small. */
-void *___tls_get_addr(const void *ti_arg) {
-    const uint32_t *ti = (const uint32_t *)ti_arg;
-    unsigned int tp32;
+ * pair (`leaq var@tlsgd(%rip), %rdi`) that the linker put in .got, and the
+ * loaders filled in the defining object's TLS module id and the variable's
+ * offset inside that module.  Every module — the program's, a library's, and one
+ * that arrived with dlopen() — has a slice of the *same* per-thread static
+ * block, so the address is just that slice's offset added to the thread pointer
+ * (%fs, whose first word holds the TCB's own address).  There is no per-module
+ * DTV to allocate, which is the whole reason this is small. */
+void *__tls_get_addr(const void *ti_arg) {
+    const uint64_t *ti = (const uint64_t *)ti_arg;
+    uint64_t tp;
 
     if (!ti || cact_tls_layout.total == 0) return 0;
-    /* A 32-bit register: the TCB address fits in 32 bits on the target, and
-     * `movl %gs:0` also assembles in the host build (where this file is
-     * compiled too, but never called). */
-    __asm__ volatile ("movl %%gs:0, %0" : "=r"(tp32));
-    if (!tp32) return 0;                        /* no block installed */
-    return cact_tls_addr(&cact_tls_layout, ti[0], ti[1], (unsigned long)tp32);
+    __asm__ volatile ("movq %%fs:0, %0" : "=r"(tp));
+    if (!tp) return 0;                          /* no block installed */
+    return cact_tls_addr(&cact_tls_layout, (uint32_t)ti[0], (uint32_t)ti[1], tp);
 }

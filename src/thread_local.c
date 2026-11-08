@@ -87,10 +87,10 @@ int *__errno_location(void) {
 }
 
 /* The kernel's per-task segment base — the facility the registry above stands
- * in for.  CactOS has no LDT, so `base_addr` is installed as the task's %gs base
+ * in for.  CactOS has no LDT, so `base_addr` is installed as the task's %fs base
  * outright and the rest of `struct user_desc` is ignored (see <sys/ldt.h>). */
 int set_thread_area(struct user_desc *u_info) {
     if (!u_info) { errno = EFAULT; return -1; }
-    uint32_t base = (uint32_t)u_info->base_addr;
+    uint64_t base = (uint64_t)u_info->base_addr;
     return nio_map(nio_ctl(CACT_PROCCTL_SET_TLS, &base));
 }

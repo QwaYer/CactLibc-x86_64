@@ -1,11 +1,9 @@
 /* Internal per-thread storage for CactLibc.  Not a public header.
  *
- * The Cact kernel has no TLS facility at all (no set_thread_area/LDT, no
- * per-task %gs/%fs base, no free GDT slot), so a compiler `__thread` is not
- * available yet.  What a thread-local value *can* use is the one thing the
- * libc fully controls: the thread's stack.  Every thread stack is allocated by
+ * errno and dlerror() need a per-thread slot, and the cheapest one the libc can
+ * keep is tied to the thread's stack: every thread stack is allocated by
  * pthread_create, so its address range identifies the running thread — and
- * reading %esp needs no syscall, unlike GET_TID.
+ * reading %rsp needs no syscall, unlike GET_TID, and no TLS layout.
  *
  * The leader has no descriptor in the registry; a stack pointer that matches no
  * registered range gets the static leader block.  That is safe because worker
