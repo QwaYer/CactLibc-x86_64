@@ -129,7 +129,7 @@ CactLib-x86_64/
 │   ├── tz.c         timezone engine — POSIX TZ strings (localtime/mktime/%Z/%z)
 │   ├── tls_static.c static TLS (__thread) — the per-thread block and its plan
 │   ├── dlfcn.c      dlopen/dlsym/dlclose/dlerror — the runtime loader
-│   ├── syscall.c    variadic syscall() helper (sysenter)
+│   ├── syscall.c    variadic syscall() helper (syscall)
 │   ├── start.S      user _start (non-PIC + PIC flavours)
 │   └── …            atfork, env, epoll, eventfd, getopt, pthread, scanf, wait, …
 ├── include/
@@ -276,38 +276,33 @@ Honest list as of 2.0.0 — the interface is there; what follows is where the pl
 | **`regex` backtracking cap** | Backtracking stops after 4M steps, so a pathological pattern reports `REG_NOMATCH` rather than running forever. |
 | **`wordexp` diverges on purpose** | Arithmetic `$((…))` and the substring `${name:off:len}` follow POSIX, where glibc's own `wordexp` reports `WRDE_SYNTAX`; and `~user` stays literal, there being no passwd database. Deliberate, not an oversight. |
 
-## ⚙️ ABI — `sysenter` (15 traps)
+## ⚙️ ABI — `syscall` (15 traps)
 
-**Register convention (`sysenter`, 3-scalar traps):**
+**Register convention (`syscall`, 3-scalar traps):**
 
 ```
-EAX = syscall number (SYS_*)
-EBX = 1st argument
-ESI = 2nd argument
-EDI = 3rd argument
-EAX ← return value (signed int semantics)
+RAX = syscall number (SYS_*)
+RDI = 1st argument
+RSI = 2nd argument
+RDX = 3rd argument
+RAX ← return value (signed int semantics)
 ```
 
-`sysenter`/`sysexit` steal **ECX** (return ESP) and **EDX** (return EIP), which is why the second and third arguments travel in **ESI**/**EDI** (`__syscallN` in [`syscall.h`](include/syscall.h)); the kernel's legacy `int 0x80` gate has been removed.
+`syscall` steals **RCX** (return RIP) and **R11** (return RFLAGS) — which is why the remaining arguments travel in **RDI**/**RSI**/**RDX** (`__syscallN` in [`syscall.h`](include/syscall.h)) — and the kernel returns through `iretq`, so every other register comes back exactly as the caller left it. The legacy `int 0x80` gate is long gone.
 
 ```c
 static inline intptr_t __syscall3(int num, uintptr_t a1, uintptr_t a2, uintptr_t a3) {
     intptr_t ret;
-    __asm__ volatile (
-        "movl %%esp, %%ecx\n\t"
-        "call 1f\n\t"
-        "1:\n\t"
-        "popl %%edx\n\t"
-        "addl $(2f - 1b), %%edx\n\t"
-        "sysenter\n\t"
-        "2:\n\t"
+    __asm__ volatile ("syscall"
         : "=a"(ret)
-        : "a"(num), "b"(a1), "S"(a2), "D"(a3)
-        : "ecx", "edx", "memory"
+        : "a"(num), "D"(a1), "S"(a2), "d"(a3)
+        : "rcx", "r11", "memory"
     );
     return ret;
 }
 ```
+
+> ⚠️ The kernel's entry borrows the word at **`[rsp-8]`** to carry the syscall number while it finds the kernel stack — that word is the bottom of the SysV red zone, so the libc is built **`-mno-red-zone`** (`meson.build`). A leaf function that kept a local there would find it overwritten by every syscall it made.
 
 Many traps take a **pointer/struct** (e.g. `SYS_MMAP`); the kernel dispatches those through its full frame path — `_needs_frame()` in CactKernel **`mod.c`**.
 
@@ -341,6 +336,6 @@ Many traps take a **pointer/struct** (e.g. `SYS_MMAP`); the kernel dispatches th
 
 <p align="center">
   <strong>Developer:</strong> <a href="https://github.com/QwaYer">QwaYer</a>
-  &nbsp;·&nbsp; <strong>Kernel:</strong> <a href="https://github.com/QwaYer/CactKernel-x86_32">CactKernel-x86_32</a>
+  &nbsp;·&nbsp; <strong>Kernel:</strong> <a href="https://github.com/QwaYer/CactKernel-x86_64">CactKernel-x86_64</a>
   &nbsp;·&nbsp; <strong>OS:</strong> <a href="https://github.com/QwaYer/CactOS-x86_32">CactOS-x86_32</a>
 </p>

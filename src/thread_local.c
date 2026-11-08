@@ -26,9 +26,9 @@ static volatile int tls_hint = -1;
 static struct cact_tls leader_blk;
 
 static uintptr_t current_sp(void) {
-#if defined(__i386__)
+#if defined(__x86_64__) && defined(__CACT__)
     uintptr_t sp;
-    __asm__ volatile ("movl %%esp, %0" : "=r"(sp));
+    __asm__ volatile ("movq %%rsp, %0" : "=r"(sp));
     return sp;
 #else
     /* Host builds (the errno unit check) only: any address inside the current

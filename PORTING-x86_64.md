@@ -144,10 +144,13 @@ libc уже сегодня компилируется и исполняется 
 ### Фаза 1 — syscall-соглашение
 
 `include/syscall.h` — `syscall`/`rdi/rsi/rdx`, макрос `__CACT__`;
-`src/syscall.c` — то же тело; `src/thread_local.c` — `%rsp`.
+`src/syscall.c` — то же тело; `src/thread_local.c` — `%rsp`;
+`include/stdint.h` — `intptr_t`/`uintptr_t` 64 бита (это предпосылка: `syscall()`
+несёт указатели, и `stdlib.c` сравнивает `brk` с `UINTPTR_MAX`);
+`meson.build` — `-mno-red-zone`.
 
 **Milestone:** host-тесты зелёные (заглушечная ветка не задействована), цель
-собирается.
+собирается до ассемблера.
 
 ### Фаза 2 — ассемблер
 
@@ -159,8 +162,8 @@ libc уже сегодня компилируется и исполняется 
 
 ### Фаза 3 — ABI-заголовки
 
-`ioctl_abi.h` ← ядро; `stdint.h` (`intptr_t`/`uintptr_t` 64 бита);
-`stat.h.st_size`; `dl_objects.h`; `tls_layout.h` (слово TCB); проверка размеров
+`ioctl_abi.h` ← ядро; `stat.h.st_size`; `dl_objects.h`; `tls_layout.h` (слово
+TCB); `mman.c` (касты через `uintptr_t`); проверка размеров
 `siginfo_t`/`ucontext_t`.
 
 **Milestone:** host-тесты зелёные; `_Static_assert` на `cact_stat_t` проходит в

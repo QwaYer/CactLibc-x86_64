@@ -37,9 +37,16 @@ cactlib_version = fs.exists('VERSION') ? fs.read('VERSION').strip() : 'unknown'
 # include/version.h, so no -D is needed here.  -D__CACT__ marks the target: the
 # build machine is x86-64 too, so it is the only thing that tells <syscall.h>
 # and thread_local.c apart from the host-test build (see PORTING-x86_64.md).
+#
+# -mno-red-zone is not optional here: the kernel's syscall entry borrows the
+# word at [rsp-8] to carry the syscall number while it finds the kernel stack
+# (Cact/kernel/core/syscall_entries.asm), and that word is the bottom of the
+# SysV red zone.  A leaf function that kept a local there would have it
+# overwritten by every syscall it made.
 libc_c_args = ['-ffreestanding', '-fno-pie', '-fno-stack-protector', '-nostdlib',
-               '-D__CACT__']
-pic_c_args = ['-ffreestanding', '-fno-stack-protector', '-nostdlib', '-D__CACT__']
+               '-mno-red-zone', '-D__CACT__']
+pic_c_args = ['-ffreestanding', '-fno-stack-protector', '-nostdlib',
+              '-mno-red-zone', '-D__CACT__']
 
 libc_includes = include_directories('include')
 

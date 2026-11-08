@@ -5,7 +5,7 @@
 
 /*
  * Minimal syscall ABI (15 numbers). The numbers and their order must match:
- *   CactKernel-x86_32/Cact/kernel/core/syscalls/syscalls.h
+ *   CactKernel-x86_64/Cact/kernel/core/syscall/syscalls.h
  * (syscall_num_t / SYSCALL_COUNT). Everything else goes through VFS nodes: see
  * ioctl_abi.h and the relay layer in src/nodeio.c.
  */
@@ -33,83 +33,59 @@
 intptr_t syscall(int num, uintptr_t p1, uintptr_t p2, uintptr_t p3);
 
 /*
- * Syscall ABI (SYSENTER/SYSEXIT):
- *   EAX = syscall number
- *   EBX = arg1
- *   ESI = arg2          (ECX is stolen by the CPU as return-ESP)
- *   EDI = arg3          (EDX is stolen by the CPU as return-EIP)
- * Return value in EAX.
+ * Syscall ABI (SYSCALL/IRETQ):
+ *   RAX = syscall number
+ *   RDI = arg1
+ *   RSI = arg2          (RCX is taken by the CPU as the return-RIP)
+ *   RDX = arg3          (R11 is taken by the CPU as the return-RFLAGS)
+ * Return value in RAX.  The kernel returns through iretq, so every register
+ * other than RAX/RCX/R11 comes back exactly as the caller left it.
  *
- * The i686 target goes through sysenter.  The libc test suite also compiles
- * these units for the build machine, where that instruction does not exist and
- * no kernel is behind it, so stub definitions stand in below.
+ * A note on the stack: the kernel's entry borrows one word of the *user* stack
+ * ([rsp-8]) to carry the syscall number while it locates the kernel stack, and
+ * restores rsp on return.  That word is inside the SysV red zone, so the libc
+ * is built with -mno-red-zone (see meson.build) — otherwise a leaf function
+ * compiling its locals at [rsp-8] would find them overwritten by every syscall.
+ *
+ * The libc test suite also compiles these units for the build machine, which is
+ * x86_64 as well and has no kernel behind the instruction, so the stub
+ * definitions below stand in.  `__CACT__` (set by the build, see meson.build)
+ * is what tells the two apart — the architecture no longer does.
  */
-#if defined(__i386__)
+#if defined(__x86_64__) && defined(__CACT__)
 static inline intptr_t __syscall0(int num) {
     intptr_t ret;
-    __asm__ volatile (
-        "movl %%esp, %%ecx\n\t"
-        "call 1f\n\t"
-        "1:\n\t"
-        "popl %%edx\n\t"
-        "addl $(2f - 1b), %%edx\n\t"
-        "sysenter\n\t"
-        "2:\n\t"
+    __asm__ volatile ("syscall"
         : "=a"(ret)
         : "a"(num)
-        : "ecx", "edx", "memory"
-    );
+        : "rcx", "r11", "memory");
     return ret;
 }
 
 static inline intptr_t __syscall1(int num, uintptr_t a1) {
     intptr_t ret;
-    __asm__ volatile (
-        "movl %%esp, %%ecx\n\t"
-        "call 1f\n\t"
-        "1:\n\t"
-        "popl %%edx\n\t"
-        "addl $(2f - 1b), %%edx\n\t"
-        "sysenter\n\t"
-        "2:\n\t"
+    __asm__ volatile ("syscall"
         : "=a"(ret)
-        : "a"(num), "b"(a1)
-        : "ecx", "edx", "memory"
-    );
+        : "a"(num), "D"(a1)
+        : "rcx", "r11", "memory");
     return ret;
 }
 
 static inline intptr_t __syscall2(int num, uintptr_t a1, uintptr_t a2) {
     intptr_t ret;
-    __asm__ volatile (
-        "movl %%esp, %%ecx\n\t"
-        "call 1f\n\t"
-        "1:\n\t"
-        "popl %%edx\n\t"
-        "addl $(2f - 1b), %%edx\n\t"
-        "sysenter\n\t"
-        "2:\n\t"
+    __asm__ volatile ("syscall"
         : "=a"(ret)
-        : "a"(num), "b"(a1), "S"(a2)
-        : "ecx", "edx", "memory"
-    );
+        : "a"(num), "D"(a1), "S"(a2)
+        : "rcx", "r11", "memory");
     return ret;
 }
 
 static inline intptr_t __syscall3(int num, uintptr_t a1, uintptr_t a2, uintptr_t a3) {
     intptr_t ret;
-    __asm__ volatile (
-        "movl %%esp, %%ecx\n\t"
-        "call 1f\n\t"
-        "1:\n\t"
-        "popl %%edx\n\t"
-        "addl $(2f - 1b), %%edx\n\t"
-        "sysenter\n\t"
-        "2:\n\t"
+    __asm__ volatile ("syscall"
         : "=a"(ret)
-        : "a"(num), "b"(a1), "S"(a2), "D"(a3)
-        : "ecx", "edx", "memory"
-    );
+        : "a"(num), "D"(a1), "S"(a2), "d"(a3)
+        : "rcx", "r11", "memory");
     return ret;
 }
 #else
