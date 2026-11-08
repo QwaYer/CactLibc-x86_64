@@ -39,10 +39,13 @@
 #define S_IWOTH  00002
 #define S_IXOTH  00001
 
+/* Layout-identical to the kernel's `cact_stat_t` (see ioctl_abi.h): the VFS
+ * writes that struct straight into a caller-supplied buffer, 24 bytes of it, so
+ * `size` has to be 64-bit here too. */
 struct stat {
     uint32_t st_ino;
     uint32_t st_mode;
-    uint32_t st_size;
+    uint64_t st_size;
     uint32_t st_type;
 };
 
@@ -53,6 +56,9 @@ int chmod(const char *path, int mode);
 int chown(const char *path, int uid, int gid);
 
 #include <ioctl_abi.h>
+
+_Static_assert(sizeof(struct stat) == sizeof(cact_stat_t), "struct stat layout drift");
+
 // Filesystem statistics for the filesystem containing `path`.
 int statfs(const char *path, cact_statfs_t *buf);
 // Rich stat; `flags` may set CACT_AT_SYMLINK_NOFOLLOW.

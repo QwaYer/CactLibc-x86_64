@@ -2,7 +2,11 @@
 #include "syscall.h"
 #include <stdint.h>
 
-/* mmap argument structure — must match kernel's mmap_args_t */
+/* mmap argument structure — must match kernel's mmap_args_t.  The three sizes
+ * stay 32-bit: the mmap window (MMAP_BASE..MMAP_LIMIT) and the whole low user
+ * half are below 4 GiB, so the kernel's own `do_mmap` takes 32-bit bounds and
+ * the address is a hint in that window (see decision 9 in the kernel's
+ * PORTING-x86_64.md). */
 typedef struct {
     unsigned int addr;
     unsigned int length;
@@ -15,7 +19,7 @@ typedef struct {
 void *mmap(void *addr, size_t length, int prot, int flags, int fd, unsigned int offset)
 {
     mmap_args_t args;
-    args.addr   = (unsigned int)addr;
+    args.addr   = (unsigned int)(uintptr_t)addr;
     args.length = (unsigned int)length;
     args.prot   = prot;
     args.flags  = flags;

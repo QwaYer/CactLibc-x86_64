@@ -1,3 +1,6 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Copyright (C) 2026 CactOS Project */
+
 #ifndef IOCTL_ABI_H
 #define IOCTL_ABI_H
 
@@ -31,7 +34,9 @@
 // routed straight to the node's own ops; they must stay outside 0x3000-0x3FFF.
 //
 // ioctl conventions:
-//   - return value >= 0 is meaningful (new fd, offset, mask, ...)
+//   - return value >= 0 is meaningful (new fd, offset, mask, ...); the ioctl
+//     return channel is 64-bit (sys_ioctl returns int64_t and the value lands
+//     in rax), so a >2 GiB lseek offset survives
 //   - return value < 0 is -errno
 //   - every `arg` is a pointer to a user-space struct from this header, unless
 //     documented otherwise.
@@ -39,50 +44,50 @@
 #include <stdint.h>
 
 // ===========================================================================
-// Final core syscall numbering (15).  Applied when syscalls.h is rewritten in
-// the final migration step (SYS_* names already collide with the legacy table
-// and with mmap.h macros until then):
-//   SYS_OPEN=0 SYS_CLOSE=1 SYS_READ=2 SYS_WRITE=3 SYS_IOCTL=4 SYS_POLL=5
-//   SYS_FORK=6 SYS_EXEC=7 SYS_EXIT=8 SYS_WAITPID=9 SYS_BRK=10 SYS_MMAP=11
-//   SYS_MUNMAP=12 SYS_MPROTECT=13 SYS_SIGRETURN=14  (SYS_COUNT=15)
-// ===========================================================================
-
-// ===========================================================================
-// Shared stat structure (4 words, matches the kernel VFS stat buffer).
+// Shared stat structure (matches the kernel VFS `cact_stat_t`).  `size` is
+// 64-bit so a regular file larger than 4 GiB reports correctly; the struct is
+// naturally aligned to 8 bytes (24 bytes total).
 // ===========================================================================
 typedef struct cact_stat {
     uint32_t inode;
     uint32_t mode;   // POSIX-ish mode (type bits | rwxrwxrwx)
-    uint32_t size;
+    uint64_t size;   // 64-bit byte length
     uint32_t type;   // VFS node type (file/dir/chardev/...)
 } cact_stat_t;
 
-// Rich stat (full POSIX metadata; timestamps zero until the VFS tracks them).
+// Rich stat: the POSIX metadata the small stat struct cannot carry.  Timestamps
+// are zero for now (the VFS does not track them yet), but are 64-bit so they
+// can hold a full Unix-epoch second count.
 typedef struct cact_statx {
     uint32_t ino;
     uint32_t mode;     // full st_mode (type bits | rwxrwxrwx)
     uint32_t nlink;
     uint32_t uid;
     uint32_t gid;
-    uint32_t size;
+    uint64_t size;     // 64-bit byte length
     uint32_t blksize;
     uint32_t blocks;   // 512-byte blocks
-    uint32_t atime;
-    uint32_t mtime;
-    uint32_t ctime;
+    uint64_t atime;    // seconds since the Unix epoch
+    uint64_t mtime;
+    uint64_t ctime;
     uint32_t type;     // VFS node type
 } cact_statx_t;
 
+// Layout is mirrored in Rust (`CactStat`/`CactStatx` in rust_vfs/src/abi.rs);
+// these stop the build here if the two ever drift.
+_Static_assert(sizeof(cact_stat_t) == 24, "cact_stat_t layout drift");
+_Static_assert(sizeof(cact_statx_t) == 72, "cact_statx_t layout drift");
+
 // Filesystem statistics (POSIX struct statfs).
 typedef struct cact_statfs {
-    uint32_t f_type;
-    uint32_t f_bsize;
-    uint32_t f_blocks;
-    uint32_t f_bfree;
-    uint32_t f_bavail;
-    uint32_t f_files;
-    uint32_t f_ffree;
-    uint32_t f_namelen;
+    uint32_t f_type;     // filesystem type (hash of the fstype name)
+    uint32_t f_bsize;    // optimal transfer block size
+    uint32_t f_blocks;   // total data blocks
+    uint32_t f_bfree;    // free blocks
+    uint32_t f_bavail;   // free blocks available to unprivileged users
+    uint32_t f_files;    // total inodes
+    uint32_t f_ffree;    // free inodes
+    uint32_t f_namelen;  // maximum filename length
 } cact_statfs_t;
 
 // ===========================================================================
@@ -91,11 +96,11 @@ typedef struct cact_statfs {
 #define CACT_FDCTL_DUP        0x3001  // arg=NULL;          returns new fd
 #define CACT_FDCTL_DUP2       0x3002  // arg=cact_fd_arg_t* (newfd)
 #define CACT_FDCTL_FCNTL      0x3003  // arg=cact_fcntl_arg_t*
-#define CACT_FDCTL_LSEEK      0x3004  // arg=cact_lseek_arg_t*; returns new offset
+#define CACT_FDCTL_LSEEK      0x3004  // arg=cact_lseek_arg_t*; returns the new (64-bit) offset
 #define CACT_FDCTL_FSTAT      0x3005  // arg=cact_stat_t*    (out)
-#define CACT_FDCTL_FTRUNCATE  0x3006  // arg=uint32_t* length
+#define CACT_FDCTL_FTRUNCATE  0x3006  // arg=uint64_t* length
 #define CACT_FDCTL_GETDENTS   0x3007  // arg=cact_getdents_arg_t*; returns bytes
-#define CACT_FDCTL_FSYNC      0x3008  // arg=NULL (no-op)
+#define CACT_FDCTL_FSYNC      0x3008  // arg=NULL (flush the file's page cache)
 #define CACT_FDCTL_FSTATX     0x3009  // arg=cact_statx_t*   (out)
 
 typedef struct cact_fd_arg { uint32_t newfd; } cact_fd_arg_t;
@@ -109,7 +114,7 @@ typedef struct cact_fd_arg { uint32_t newfd; } cact_fd_arg_t;
 
 typedef struct cact_fcntl_arg { uint32_t cmd; uint32_t arg; } cact_fcntl_arg_t;
 
-typedef struct cact_lseek_arg { int32_t offset; uint32_t whence; } cact_lseek_arg_t;
+typedef struct cact_lseek_arg { int64_t offset; uint32_t whence; } cact_lseek_arg_t;
 // whence: 0=SET 1=CUR 2=END
 
 typedef struct cact_getdents_arg { void *buf; uint32_t count; } cact_getdents_arg_t;
@@ -134,7 +139,7 @@ typedef struct cact_getdents_arg { void *buf; uint32_t count; } cact_getdents_ar
 #define CACT_DIRCTL_MKNOD     0x310E  // arg=cact_mknod_arg_t*
 #define CACT_DIRCTL_CREATE    0x310F  // arg=cact_openat_arg_t* (O_CREAT only)
 #define CACT_DIRCTL_STATX     0x3110  // arg=cact_statx_arg_t*
-#define CACT_DIRCTL_RENAMEAT  0x3111  // arg=cact_renameat_arg_t* (cross-directory)
+#define CACT_DIRCTL_RENAMEAT  0x3111  // arg=cact_renameat_arg_t*
 #define CACT_DIRCTL_STATFS    0x3112  // arg=cact_statfs_arg_t*
 
 // open flags (Linux/i386-compatible; must mirror the kernel OPEN_* values)
@@ -148,19 +153,21 @@ typedef struct cact_getdents_arg { void *buf; uint32_t count; } cact_getdents_ar
 
 typedef struct cact_openat_arg { char *name; uint32_t flags; } cact_openat_arg_t;
 typedef struct cact_statat_arg { char *name; cact_stat_t *buf; } cact_statat_arg_t;
+typedef struct cact_statx_arg  { char *name; cact_statx_t *buf; uint32_t flags; } cact_statx_arg_t;
+// CACT_AT_SYMLINK_NOFOLLOW: statx does not follow a final symlink.
+#define CACT_AT_SYMLINK_NOFOLLOW 0x100
 typedef struct cact_link_arg    { char *target; char *newname; } cact_link_arg_t;
 typedef struct cact_symlink_arg { char *target; char *linkname; } cact_symlink_arg_t;
 typedef struct cact_readlink_arg{ char *name; char *buf; uint32_t len; } cact_readlink_arg_t;
 typedef struct cact_rename_arg  { char *oldname; char *newname; } cact_rename_arg_t;
-// Cross-directory rename: newdir is the destination directory path.
+// Cross-directory rename: invoked on the source directory fd; `newdir` is the
+// destination directory path (relative to cwd or absolute).
 typedef struct cact_renameat_arg { char *oldname; char *newdir; char *newname; } cact_renameat_arg_t;
-typedef struct cact_statx_arg   { char *name; cact_statx_t *buf; uint32_t flags; } cact_statx_arg_t;
 typedef struct cact_statfs_arg  { char *name; cact_statfs_t *buf; } cact_statfs_arg_t;
-#define CACT_AT_SYMLINK_NOFOLLOW 0x100  // statx: do not follow a final symlink
 typedef struct cact_access_arg  { char *name; uint32_t mode; } cact_access_arg_t;  // mode: 4=r 2=w 1=x
 typedef struct cact_chmod_arg   { char *name; uint32_t mode; } cact_chmod_arg_t;
 typedef struct cact_chown_arg   { char *name; uint32_t uid; uint32_t gid; } cact_chown_arg_t;
-typedef struct cact_truncate_arg{ char *name; uint32_t length; } cact_truncate_arg_t;
+typedef struct cact_truncate_arg{ char *name; uint64_t length; } cact_truncate_arg_t;
 typedef struct cact_mknod_arg   { char *name; uint32_t mode; uint32_t dev; } cact_mknod_arg_t;
 
 // ===========================================================================
@@ -182,8 +189,10 @@ typedef struct cact_proc_info {
 
 // /proc/self/cwd — read-only; content is the absolute cwd (no trailing NUL).
 
-// /proc/time — binary read-only (8 bytes), monotonic since boot.
-typedef struct cact_time { uint32_t sec; uint32_t usec; } cact_time_t;
+// /proc/time — binary read-only (16 bytes), monotonic since boot.  `sec` is
+// 64-bit (an unsigned 32-bit second count wraps in ~136 years — or in ~497 days
+// of 100 Hz monotonic ticks); `usec` is always < 1e6 and stays 32-bit.
+typedef struct cact_time { uint64_t sec; uint32_t usec; } cact_time_t;
 
 // /proc/wallclock — binary read-only, same cact_time_t layout: civil time,
 // seconds since the Unix epoch, taken from the CMOS RTC read at boot.  This is
@@ -225,18 +234,18 @@ typedef struct cact_uname {
 #define CACT_PROCCTL_GET_TID     0x3215  // self; arg=NULL; returns the calling task's tid
 #define CACT_PROCCTL_KILLPG      0x3216  // self; arg=cact_killpg_arg_t*  (killpg(pgid,sig))
 #define CACT_PROCCTL_SIGALTSTACK 0x3217  // self; arg=cact_sigaltstack_arg_t* (sigaltstack(2))
-#define CACT_PROCCTL_SET_TLS     0x3218  // self; arg=uint32_t* (the %gs thread pointer)
+#define CACT_PROCCTL_SET_TLS     0x3218  // self; arg=uint64_t* (the %gs thread pointer)
 #define CACT_PROCCTL_YIELD       0x3219  // self; arg=NULL; give up the CPU to another runnable task (sched_yield)
 #define CACT_PROCCTL_SIGWAIT     0x321A  // self; arg=cact_sigwait_arg_t* (sigwait/sigwaitinfo/sigtimedwait)
 #define CACT_PROCCTL_SIGQUEUE    0x321B  // self; arg=cact_sigqueue_arg_t* (sigqueue(2))
 
 typedef struct cact_thread_create_arg {
     void*    entry;      // user entry point (called as entry(arg))
-    uint32_t user_esp;   // initial user stack pointer (libc lays out the frame)
+    uint64_t user_esp;   // initial user stack pointer (libc lays out the frame)
     uint32_t flags;      // reserved, 0
-    uint32_t tls;        // reserved, 0
-    uint32_t set_child_tid;   // kernel writes the new tid here before it runs (0 = none)
-    uint32_t clear_child_tid; // join futex word the kernel zeroes on exit (0 = none)
+    uint64_t tls;        // this thread's %gs base (0 = none)
+    uint64_t set_child_tid;   // kernel writes the new tid here before it runs (0 = none)
+    uint64_t clear_child_tid; // join futex word the kernel zeroes on exit (0 = none)
 } cact_thread_create_arg_t;
 
 #define CACT_FUTEX_WAIT 0
@@ -248,7 +257,7 @@ typedef struct cact_thread_create_arg {
 #define CACT_FUTEX_WAKE_SHARED 3
 
 typedef struct cact_futex_arg {
-    uint32_t uaddr;      // futex word, user VA
+    uint64_t uaddr;      // futex word, user VA
     int32_t  op;         // CACT_FUTEX_WAIT[_SHARED] | CACT_FUTEX_WAKE[_SHARED]
     int32_t  val;        // WAIT: expected value; WAKE: count
     int32_t  timeout_ms; // WAIT: <= 0 means wait forever
@@ -260,7 +269,7 @@ typedef struct cact_signal_arg { uint32_t pid; uint32_t signum; } cact_signal_ar
 typedef struct cact_killpg_arg { uint32_t pgid; uint32_t signum; } cact_killpg_arg_t;
 typedef struct cact_sigaction_arg {
     uint32_t signum;
-    uint32_t handler;
+    uint64_t handler;
     uint32_t flags;      // sa_flags (CACT_SA_*); 0 for plain signal()
     uint32_t mask;       // sa_mask: signals blocked while this handler runs
 } cact_sigaction_arg_t;
@@ -269,6 +278,11 @@ typedef struct cact_sigaction_arg {
 #define CACT_SA_ONSTACK 0x08000000   // run the handler on the alternate stack
 #define CACT_SA_SIGINFO 0x0004       // handler is void(int, siginfo_t *, void *)
 #define CACT_SA_NODEFER 0x40000000   // the signal is not blocked inside its own handler
+
+// si_code values the kernel reports in an SA_SIGINFO frame (values match the
+// libc's <signal.h>; anything else means the signal came from kill()/raise()).
+#define CACT_SI_USER    0            // sent by a process
+#define CACT_SI_KERNEL  0x80         // generated by the kernel (a fault)
 
 // sigaltstack(2) status bits (match SS_* in the libc's <signal.h>).
 #define CACT_SS_ONSTACK 1
@@ -284,20 +298,22 @@ typedef struct cact_sigaction_arg {
 //   sp!=0, size>=CACT_MINSIGSTKSZ - enable it at [sp, sp+size)
 // old_flags carries CACT_SS_ONSTACK while a handler is running on it.
 typedef struct cact_sigaltstack_arg {
-    uint32_t sp;
+    uint64_t sp;
     uint32_t size;
     uint32_t flags;
-    uint32_t old_sp;
+    uint64_t old_sp;
     uint32_t old_size;
     uint32_t old_flags;
 } cact_sigaltstack_arg_t;
 typedef struct cact_sigprocmask_arg { uint32_t how; uint32_t set; uint32_t oldset; } cact_sigprocmask_arg_t;
 /* sigwait()/sigwaitinfo()/sigtimedwait(): block until one of `set` is pending,
-   then *consume* it (no handler runs).  `set` is in, the rest out. */
+   then *consume* it — it is not delivered to a handler.  `set` is in, the rest
+   out; `timeout_ms` < 0 waits forever (see the note on the timed form in the
+   kernel's handler). */
 typedef struct cact_sigwait_arg {
     uint32_t set;        // in: the signals to wait for (kernel bit mask)
     int32_t  timeout_ms; // in: < 0 = forever, 0 = poll
-    uint32_t signum;     // out: the signal's index
+    uint32_t signum;     // out: the signal's index (what CACT_PROCCTL_SIGNAL takes)
     uint32_t code;       // out: si_code
     uint32_t value;      // out: si_value (sigqueue()'s payload)
 } cact_sigwait_arg_t;
@@ -321,16 +337,16 @@ typedef struct cact_shmctl_arg { uint32_t shmid; uint32_t cmd; void *buf; } cact
 #define CACT_SOCKCTL_GETSOCKOPT  0x3307  // arg=cact_sockopt_arg_t*
 #define CACT_SOCKCTL_SENDTO      0x3308  // arg=cact_sendto_arg_t*
 #define CACT_SOCKCTL_RECVFROM    0x3309  // arg=cact_recvfrom_arg_t*
-#define CACT_SOCKCTL_UNIX_BIND   0x330A  // AF_UNIX bind:    arg=cact_unix_addr_t*
-#define CACT_SOCKCTL_UNIX_CONNECT 0x330B // AF_UNIX connect: arg=cact_unix_addr_t*
+#define CACT_SOCKCTL_UNIX_BIND   0x330A  // AF_UNIX bind:   arg=cact_unix_addr_t*
+#define CACT_SOCKCTL_UNIX_CONNECT 0x330B // AF_UNIX connect:arg=cact_unix_addr_t*
 #define CACT_SOCKCTL_SENDMSG    0x330C  // payload + SCM_RIGHTS: arg=cact_sendmsg_arg_t*
 #define CACT_SOCKCTL_RECVMSG    0x330D  // payload + SCM_RIGHTS: arg=cact_recvmsg_arg_t*
 #define CACT_SOCKCTL_GETSOCKNAME 0x330E // arg=cact_sockname_arg_t*; local addr out
 #define CACT_SOCKCTL_GETPEERNAME 0x330F // arg=cact_sockname_arg_t*; peer addr out
-// AF_UNIX reuses CACT_SOCKCTL_LISTEN / ACCEPT / SHUTDOWN; data path is plain
-// read()/write() as for AF_INET sockets.  sendmsg/recvmsg ioctls add SCM_RIGHTS
-// fd passing on AF_UNIX stream sockets (payload stays a byte stream; passed fds
-// arrive as an ordered FIFO alongside it).
+// AF_UNIX reuses CACT_SOCKCTL_LISTEN / ACCEPT / SHUTDOWN; the data path is
+// plain read()/write(), as for AF_INET sockets.  sendmsg/recvmsg ioctls add
+// SCM_RIGHTS fd passing on AF_UNIX stream sockets (payload stays a byte
+// stream; passed fds arrive as an ordered FIFO alongside it).
 //
 
 typedef struct cact_sockaddr_in {
@@ -339,7 +355,7 @@ typedef struct cact_sockaddr_in {
 } cact_sockaddr_in_t;
 
 // AF_UNIX pathname (sockaddr_un layout: the family is implicit — an AF_UNIX
-// fd already knows its family).  NUL-terminated, up to 107 bytes.
+// fd already knows its family).  Paths are NUL-terminated; up to 107 bytes.
 typedef struct cact_unix_addr {
     char path[108];
 } cact_unix_addr_t;
@@ -467,7 +483,7 @@ typedef struct cact_netcfg_get {
 // Per-interface view (CACT_NETCTL_IFACE_GET).  Index 0 is the NIC, index 1 is
 // the loopback interface (`lo`); CACT_NETCTL_IFACE_COUNT reports how many are
 // present.  The old single-NIC ioctls above stay for binaries built against
-// them.
+// them.  Byte-compatible with `CactIfaceInfo` in rust_net/src/iface.rs.
 #define CACT_IFACE_FLAG_LOOPBACK  0x1u
 
 typedef struct cact_iface_info {
@@ -921,14 +937,14 @@ typedef struct cact_wlan_status {
 #define CACT_MQ_DEFAULT_MAXMSG 10
 #define CACT_MQ_DEFAULT_MSGSIZE 8192
 
-// struct mq_attr as syscall and userspace agree on it (long == int32_t on
-// i686; the reserved words keep glibc's struct mq_attr layout).
+// struct mq_attr as syscall and userspace agree on it (long is 64-bit on
+// x86-64; the reserved words keep glibc's struct mq_attr layout).
 typedef struct cact_mq_attr {
-    int32_t mq_flags;     // O_NONBLOCK
-    int32_t mq_maxmsg;    // INIT: in; GETATTR/SETATTR-out: the queue's depth
-    int32_t mq_msgsize;   // INIT: in; GETATTR/SETATTR-out: max message bytes
-    int32_t mq_curmsgs;   // out: messages queued right now
-    int32_t reserved[4];
+    int64_t mq_flags;     // O_NONBLOCK
+    int64_t mq_maxmsg;    // INIT: in; GETATTR/SETATTR-out: the queue's depth
+    int64_t mq_msgsize;   // INIT: in; GETATTR/SETATTR-out: max message bytes
+    int64_t mq_curmsgs;   // out: messages queued right now
+    int64_t reserved[4];
 } cact_mq_attr_t;
 
 // One send/receive.  `timeout_ms` < 0 waits forever, 0 is a poll (EAGAIN when

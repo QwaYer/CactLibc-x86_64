@@ -31,4 +31,13 @@ typedef struct {
     mcontext_t uc_mcontext;
 } ucontext_t;
 
+/* The kernel builds this shape into the signal frame (`cact_ucontext_t` and
+ * `SF_REG_*` in Cact/kernel/proc/task.h) and hands the handler a pointer to it
+ * as SA_SIGINFO's third argument.  One word per register — on x86_64 the
+ * 19-entry table is 152 bytes and `unsigned long` is what carries a register. */
+_Static_assert(sizeof(((ucontext_t *)0)->uc_mcontext.gregs) == 19 * sizeof(unsigned long),
+               "ucontext_t gregs must be 19 words in REG_* order");
+_Static_assert(sizeof(ucontext_t) == 21 * sizeof(unsigned long),
+               "ucontext_t layout drift");
+
 #endif

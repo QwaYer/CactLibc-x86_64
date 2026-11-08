@@ -105,6 +105,13 @@ typedef struct {
     union sigval si_value;
 } siginfo_t;
 
+/* The kernel builds this into the signal frame itself (`cact_siginfo_t` in
+ * Cact/kernel/proc/task.h) and enters the handler with a pointer to it, so the
+ * two definitions have to stay one shape: two ints, then two pointer-sized
+ * fields.  On x86_64 that is 4 + 4 + 8 + 8. */
+_Static_assert(sizeof(siginfo_t) == 2 * sizeof(int) + 2 * sizeof(void *),
+               "siginfo_t layout drift");
+
 /* ── sigevent ─────────────────────────────────────────────────────────────
  * POSIX's event-delivery descriptor, used by mq_notify(2) (and, in time, the
  * *_async() family).  Only SIGEV_SIGNAL and SIGEV_NONE are honoured: a
