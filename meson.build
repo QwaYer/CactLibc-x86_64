@@ -2,7 +2,7 @@
 # CactLibc — Meson build system
 # ==============================================================================
 #
-#   meson setup build-meson --cross-file cross/i686-cact-clang.ini
+#   meson setup build-meson --cross-file cross/x86_64-cact-clang.ini
 #   ninja -C build-meson
 #
 # Published artifacts, consumed by the sibling repos:
@@ -12,9 +12,9 @@
 #   build-meson/start.o         PIC _start object, linked into every userspace PIE
 #   build-meson/src/libc.a      static non-PIC archive (built on demand)
 #
-# Unlike the kernel, userspace code may use SSE: the kernel sets
-# CR4.OSFXSR|OSXMMEXCPT during FPU init (idt/fpu/fpu_hd.c) before ring 3, so the
-# C flags here deliberately do not carry -mno-sse.
+# SSE2 is part of the x86-64 ABI, so the C flags have no -mno-sse: the kernel
+# brings CR4.OSFXSR|OSXMMEXCPT up before the first C statement and every
+# userspace image may use XMM registers.
 # ==============================================================================
 
 project('cactlibc', 'c',
@@ -34,9 +34,12 @@ cactlib_version = fs.exists('VERSION') ? fs.read('VERSION').strip() : 'unknown'
 
 # Non-PIC objects (libc.a, ld.so) and PIC objects (clibc.so).  The PIC variant
 # takes -fPIC from the target's `pic: true`; the version macro lives in
-# include/version.h, so no -D is needed here.
-libc_c_args = ['-ffreestanding', '-fno-pie', '-fno-stack-protector', '-nostdlib']
-pic_c_args = ['-ffreestanding', '-fno-stack-protector', '-nostdlib']
+# include/version.h, so no -D is needed here.  -D__CACT__ marks the target: the
+# build machine is x86-64 too, so it is the only thing that tells <syscall.h>
+# and thread_local.c apart from the host-test build (see PORTING-x86_64.md).
+libc_c_args = ['-ffreestanding', '-fno-pie', '-fno-stack-protector', '-nostdlib',
+               '-D__CACT__']
+pic_c_args = ['-ffreestanding', '-fno-stack-protector', '-nostdlib', '-D__CACT__']
 
 libc_includes = include_directories('include')
 
@@ -53,13 +56,13 @@ subdir('tests')
 custom_target('start-pic',
   input: 'src/start.S',
   output: 'start.o',
-  command: cc.cmd_array() + ['-m32'] + pic_c_args + ['-fPIC', '-c', '@INPUT@', '-o', '@OUTPUT@'],
+  command: cc.cmd_array() + ['-m64'] + pic_c_args + ['-fPIC', '-c', '@INPUT@', '-o', '@OUTPUT@'],
   build_by_default: true)
 
 custom_target('clibc-so',
   input: cactlib_pic,
   output: 'clibc.so',
-  command: [ld, '-m', 'elf_i386', '-shared', '-nostdlib',
+  command: [ld, '-m', 'elf_x86_64', '-shared', '-nostdlib',
             '--hash-style=both', '-soname=clibc.so',
             '-T', src_root / 'libc.ld', '-o', '@OUTPUT@',
             '--whole-archive', cactlib_pic, '--no-whole-archive'],
@@ -69,7 +72,7 @@ custom_target('clibc-so',
 custom_target('ld-so',
   input: ldso_lib,
   output: 'ld.so',
-  command: [ld, '-m', 'elf_i386', '-nostdlib',
+  command: [ld, '-m', 'elf_x86_64', '-nostdlib',
             '-T', src_root / 'ldso' / 'ldso.ld', '-o', '@OUTPUT@',
             '--whole-archive', ldso_lib, '--no-whole-archive'],
   depend_files: files('ldso/ldso.ld'),

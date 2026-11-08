@@ -1,18 +1,22 @@
-# 🌵 CactLib/x86_32
+# 🌵 CactLib/x86_64
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.0.0-green.svg?style=for-the-badge" alt="Version: 2.0.0">
+  <img src="https://img.shields.io/badge/version-3.0.0-green.svg?style=for-the-badge" alt="Version: 3.0.0">
   <img src="https://img.shields.io/badge/license-GPLv3-blue.svg?style=for-the-badge" alt="License: GPLv3">
-  <img src="https://img.shields.io/badge/arch-i686-red.svg?style=for-the-badge" alt="Arch: i686">
+  <img src="https://img.shields.io/badge/arch-x86_64-red.svg?style=for-the-badge" alt="Arch: x86_64">
   <img src="https://img.shields.io/badge/language-C%2FASM-orange.svg?style=for-the-badge" alt="Language: C/ASM">
   <img src="https://img.shields.io/badge/output-clibc.so-green.svg?style=for-the-badge" alt="clibc.so">
-  <img src="https://img.shields.io/badge/syscall-sysenter-purple.svg?style=for-the-badge" alt="sysenter">
-  <img src="https://img.shields.io/badge/status-2.0.0-yellow.svg?style=for-the-badge" alt="2.0.0">
+  <img src="https://img.shields.io/badge/syscall-syscall-purple.svg?style=for-the-badge" alt="syscall">
+  <img src="https://img.shields.io/badge/status-3.0.0-yellow.svg?style=for-the-badge" alt="3.0.0">
 </p>
 
 <p align="center">
-  A <strong>freestanding C library</strong> for <a href="https://github.com/QwaYer/CactOS-x86_32"><strong>CactOS</strong></a> user space on <strong>i686</strong>.<br>
-  No host libc — every OS entry goes through <code>sysenter</code> using the numbers from <a href="include/syscall.h"><code>include/syscall.h</code></a>, which must match <a href="https://github.com/QwaYer/CactKernel-x86_32"><strong>CactKernel-x86_32</strong></a> <code>syscalls.h</code>; everything beyond the <strong>15</strong> traps is a VFS-node ioctl from <a href="include/ioctl_abi.h"><code>ioctl_abi.h</code></a>.
+  A <strong>freestanding C library</strong> for <a href="https://github.com/QwaYer/CactOS-x86_32"><strong>CactOS</strong></a> user space on <strong>x86_64</strong>.<br>
+  No host libc — every OS entry goes through <code>syscall</code> using the numbers from <a href="include/syscall.h"><code>include/syscall.h</code></a>, which must match <a href="https://github.com/QwaYer/CactKernel-x86_64"><strong>CactKernel-x86_64</strong></a> <code>syscalls.h</code>; everything beyond the <strong>15</strong> traps is a VFS-node ioctl from <a href="include/ioctl_abi.h"><code>ioctl_abi.h</code></a>.
+</p>
+
+<p align="center">
+  Fork of <a href="https://github.com/QwaYer/CactLibc-x86_32"><strong>CactLibc-x86_32</strong></a> 2.0.0 — the x86_64 port; the plan is <a href="PORTING-x86_64.md"><code>PORTING-x86_64.md</code></a>.
 </p>
 
 ---
@@ -24,7 +28,7 @@
 | **Sources** | 53 × `src/*.c` + `src/start.S`, `src/setjmp.S`, `src/thread_start.S` |
 | **Public headers** | 74 files under `include/` (including `sys/*.h`) |
 | **Syscall traps** | **15** (`SYS_SYSCALL_COUNT` mirrors the kernel enum); every other operation is a VFS-node ioctl |
-| **Runtime deps** | None (build-time: `clang -m32`, GNU `binutils`, `meson`, `ninja`) |
+| **Runtime deps** | None (build-time: `clang -m64`, GNU `binutils`, `meson`, `ninja`) |
 | **Artifacts** | **`clibc.so`** (shared ET_DYN for PIE), **`build-meson/ld.so`** (PT_INTERP dynamic linker), **`build-meson/start.o`** (PIC `_start`) |
 
 CactLib is the **contract surface** between user ELF binaries and the kernel. If you add or renumber a syscall in the kernel, you **must**:
@@ -47,13 +51,13 @@ Clone **[CactOS-x86_32](https://github.com/QwaYer/CactOS-x86_32)** next to this 
 
 **Standalone — this repository**
 
-**Requirements:** **`clang`** with **`-m32`**, GNU **`binutils`**, **`meson`** and **`ninja`**.
+**Requirements:** **`clang`** with **`-m64`**, GNU **`binutils`**, **`meson`** and **`ninja`**.
 
 ```sh
-git clone https://github.com/QwaYer/CactLibc-x86_32
-cd CactLibc-x86_32
+git clone https://github.com/QwaYer/CactLibc-x86_64
+cd CactLibc-x86_64
 
-meson setup build-meson --cross-file cross/i686-cact-clang.ini
+meson setup build-meson --cross-file cross/x86_64-cact-clang.ini
 ninja -C build-meson        # build-meson/{clibc.so,ld.so,start.o}
 ninja -C build-meson clean
 ```
@@ -61,27 +65,31 @@ ninja -C build-meson clean
 **Default compile flags** (see [`meson.build`](meson.build)):
 
 ```meson
-libc_c_args = ['-ffreestanding', '-fno-pie', '-fno-stack-protector', '-nostdlib']
+libc_c_args = ['-ffreestanding', '-fno-pie', '-fno-stack-protector', '-nostdlib',
+               '-D__CACT__']
 # clibc.so objects take -fPIC from the target's `pic: true`
 ```
+
+`-D__CACT__` marks the CactOS target rather than the DOS ABI alone: the build
+machine is x86-64 too, so it is what keeps [`syscall.h`](include/syscall.h)'s
+real `syscall` instruction out of the host-test build (see
+[`PORTING-x86_64.md`](PORTING-x86_64.md)).
 
 **Static link example** (the archive is built on demand):
 
 ```sh
 ninja -C build-meson src/libc.a
-ld -m elf_i386 -nostdlib -o myprogram myprogram.o build-meson/src/libc.a
+ld -m elf_x86_64 -nostdlib -o myprogram myprogram.o build-meson/src/libc.a
 ```
 
 **Shared / PIE note:** `clibc.so` is built as **`ET_DYN`** with a fixed link script (`libc.ld`). PIE executables link against **`build-meson/start.o`** + **`build-meson/clibc.so`**.
-
-> ⚠️ **i686 only.** Building `-m32` will fail on a pure 64-bit toolchain without multilib.
 
 ---
 
 ## 📂 Layout
 
 ```
-CactLib-x86_32/
+CactLib-x86_64/
 ├── src/
 │   ├── stdio.c      printf family (integers, %f/%e/%g, width/precision/#) — one formatter engine, puts, putchar, kprint
 │   ├── stdlib.c     malloc/brk heap, exit, atoi, itoa, …
