@@ -6,18 +6,18 @@
 .type _start, @function
 
 _start:
-    movl %esp, %ebx          /* ebx = original stack pointer (points at argc) */
-    andl $-16, %esp          /* align; ABI wants esp ≡ 0 right before `call` */
-    subl $12, %esp           /* + pushed arg below = 16 bytes of callee args */
-    pushl %ebx               /* arg1: pointer to argc */
+    /* rbx = original stack pointer (points at argc).  The kernel leaves rsp
+     * 16-byte aligned, and rbx is callee-saved, so it survives ldso_entry and
+     * the `call` below needs no padding. */
+    movq %rsp, %rbx
+    movq %rbx, %rdi             /* arg1: pointer to argc */
     call ldso_entry
-    addl $16, %esp
-    movl %ebx, %esp          /* restore original user stack */
-    testl %eax, %eax
+    movq %rbx, %rsp             /* restore original user stack */
+    testq %rax, %rax
     jz 1f
-    jmp *%eax                /* enter the relocated main image */
+    jmp *%rax                   /* enter the relocated main image */
 1:
-    call ldso_die            /* returns 0 from ldso_entry -> fatal */
+    call ldso_die               /* returns 0 from ldso_entry -> fatal */
 2:
     hlt
     jmp 2b

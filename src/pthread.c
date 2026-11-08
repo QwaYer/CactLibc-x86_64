@@ -438,9 +438,11 @@ int pthread_setschedprio(pthread_t thread, int prio) {
 
 #define DEFAULT_STACK_SIZE (1024u * 1024u)
 
-/* Jumped to when a thread's start routine returns; EAX holds its return value
- * and the stack is unspecified.  Defined in thread_start.S. */
-extern void __cact_thread_exit_stub(void);
+/* First instruction of every worker thread (thread_start.S).  The kernel enters
+ * a thread through `iretq`, which cannot set an argument register, so `entry`
+ * is this trampoline rather than start_routine: it takes both out of the two
+ * words pthread_create leaves at the top of the stack. */
+extern void __cact_thread_entry(void);
 
 int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
                    void *(*start_routine)(void *), void *arg) {
@@ -469,26 +471,28 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
     td->stack      = stack;
     td->stack_size = DEFAULT_STACK_SIZE;
 
-    /* Initial frame: [return address = exit stub][arg].  The kernel enters
-     * start_routine as if it had been called. */
+    /* Initial frame: the two words the thread trampoline reads,
+     * [start_routine][arg], with the stack top above them.  The kernel starts
+     * the thread at __cact_thread_entry with user_esp = sp, and the trampoline
+     * calls start_routine(arg) itself — `iretq` has no way to set %rdi. */
     uintptr_t top = (uintptr_t)stack + DEFAULT_STACK_SIZE;
     top &= ~(uintptr_t)15;
     uintptr_t *sp = (uintptr_t *)top;
     *--sp = (uintptr_t)arg;
-    *--sp = (uintptr_t)__cact_thread_exit_stub;
+    *--sp = (uintptr_t)start_routine;
 
     cact_thread_create_arg_t a;
-    a.entry           = (void *)start_routine;
-    a.user_esp        = (uint32_t)(uintptr_t)sp;
+    a.entry           = (void *)__cact_thread_entry;
+    a.user_esp        = (uintptr_t)sp;
     a.flags           = 0;
-    /* The thread's %gs base: a freshly built static TLS block (the same image
+    /* The thread's %fs base: a freshly built static TLS block (the same image
      * every thread starts from, with its own .tbss).  A layout ld.so published
      * always has the reserve in it, so this is a real block; the kernel reads 0
-     * as "leave %gs alone", which only an empty layout produces.  errno also
+     * as "leave %fs alone", which only an empty layout produces.  errno also
      * finds its slot by stack range (thread_local.c). */
-    a.tls             = (uint32_t)(uintptr_t)cact_tls_block_new();
-    a.set_child_tid   = (uint32_t)(uintptr_t)&td->id;   /* kernel writes the tid */
-    a.clear_child_tid = (uint32_t)(uintptr_t)&td->clr;  /* kernel zeroes on exit */
+    a.tls             = (uintptr_t)cact_tls_block_new();
+    a.set_child_tid   = (uintptr_t)&td->id;   /* kernel writes the tid */
+    a.clear_child_tid = (uintptr_t)&td->clr;  /* kernel zeroes on exit */
 
     /* Register before the kernel starts the thread, so the new thread can find
      * its own descriptor by tid as soon as it runs.  The stack range is
@@ -527,10 +531,10 @@ void pthread_exit(void *retval) {
 }
 
 /*
- * The real thread-exit routine.  It has hidden visibility so the asm stub in
- * thread_start.S can call it with a plain PC-relative `call` (no PLT): a new
- * thread enters with %ebx unspecified, and a PLT entry would use it as the GOT
- * pointer.  A direct call lets this function establish its own GOT on entry.
+ * The real thread-exit routine.  It has hidden visibility so the trampoline in
+ * thread_start.S reaches it with a link-time-resolved rel32 rather than a PLT
+ * entry — on x86_64 a call needs no GOT register, so hidden visibility is the
+ * whole of the trick.
  */
 __attribute__((noreturn, visibility("hidden")))
 void __cact_thread_exit_body(void *retval) {

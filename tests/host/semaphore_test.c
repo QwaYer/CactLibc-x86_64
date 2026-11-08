@@ -38,7 +38,7 @@ int *cact_host_errno_ptr(void);                /* the libc's own errno slot */
 extern int          cact_host_ctl_fd_on;
 extern int          cact_host_ioctl_calls;
 extern int          cact_host_futex_op;
-extern unsigned int cact_host_futex_uaddr;
+extern uint64_t     cact_host_futex_uaddr;
 extern int          cact_host_futex_val;
 extern int          cact_host_futex_timeout;
 extern int          cact_host_futex_waits;
@@ -121,8 +121,8 @@ int main(void) {
         CK(cact_host_ioctl_calls == 1 && cact_host_futex_op == FUTEX_WAKE &&
            cact_host_futex_val == 1, "private post asked for op %d (calls %d)",
            cact_host_futex_op, cact_host_ioctl_calls);
-        CK(cact_host_futex_uaddr == (unsigned int)(uintptr_t)&priv.count,
-           "post woke the wrong word: %#x", cact_host_futex_uaddr);
+        CK(cact_host_futex_uaddr == (uintptr_t)&priv.count,
+           "post woke the wrong word: %#lx", cact_host_futex_uaddr);
         CK(cact_sem_destroy(&priv) == 0, "sem_destroy failed");
     }
 
@@ -133,8 +133,8 @@ int main(void) {
     CK(cact_host_futex_op == FUTEX_WAIT_SHARED,
        "a pshared wait asked for op %d, want WAIT_SHARED", cact_host_futex_op);
     CK(cact_host_futex_val == 0, "the wait's expected value was %d", cact_host_futex_val);
-    CK(cact_host_futex_uaddr == (unsigned int)(uintptr_t)&shared.count,
-       "the wait named the wrong word: %#x", cact_host_futex_uaddr);
+    CK(cact_host_futex_uaddr == (uintptr_t)&shared.count,
+       "the wait named the wrong word: %#lx", cact_host_futex_uaddr);
     CK(shared.count == 0, "the post's increment was not consumed (count %d)", shared.count);
     CK(cact_host_futex_waits == 1, "the shared wait slept %d times", cact_host_futex_waits);
 

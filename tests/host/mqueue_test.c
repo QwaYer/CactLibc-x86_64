@@ -59,7 +59,10 @@ static int checks, fails;
 #define HOST_MQCTL_SETATTR 0x4005u
 #define HOST_MQCTL_NOTIFY  0x4006u
 
-typedef struct { int32_t mq_flags, mq_maxmsg, mq_msgsize, mq_curmsgs, reserved[4]; } wire_attr_t;
+/* cact_mq_attr_t is four 64-bit words plus the spare ones: the kernel's comment
+ * says `long is 64-bit on x86-64`, and glibc's struct mq_attr has the same
+ * shape.  The message struct is a pointer plus three 32-bit fields. */
+typedef struct { int64_t mq_flags, mq_maxmsg, mq_msgsize, mq_curmsgs, reserved[4]; } wire_attr_t;
 typedef struct { char *msg_ptr; uint32_t msg_len, msg_prio; int32_t timeout_ms; } wire_msg_t;
 typedef struct { uint32_t signo; } wire_notify_t;
 

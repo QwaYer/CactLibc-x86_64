@@ -6,6 +6,7 @@
  * the CactOS-only nodeio helpers, which are never exercised off-target. */
 
 #include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
@@ -25,17 +26,13 @@ int *cact_host_errno_ptr(void)      { return &host_errno; }
  * semaphore unit's only way to exercise a blocking wait without a kernel.
  *
  * `cact_host_futex_word` is the unit's *host* pointer to the word it expects to
- * be waited on: the ABI carries uaddr as 32 bits, so on this 64-bit host the
- * address the unit passes is truncated before the shim could use it (the same
- * reason the tls unit cannot check the %gs base it hands over).  The unit wires
- * the word up for the shim instead, and checks the truncated uaddr it was sent
- * against the truncated address of its own word.
- */
+ * be waited on: the ABI carries uaddr at pointer width, and the unit checks the
+ * address it was sent against the address of its own word. */
 int           cact_host_ctl_fd_on;
 int           cact_host_ioctl_calls;
 unsigned long cact_host_ioctl_cmd;
 int           cact_host_futex_op = -1;     /* the op the unit's code asked for */
-unsigned int  cact_host_futex_uaddr;
+uint64_t      cact_host_futex_uaddr;
 int           cact_host_futex_val;
 int           cact_host_futex_timeout;
 int           cact_host_futex_waits;       /* WAITs seen since the last reset */
@@ -48,8 +45,9 @@ int           cact_host_futex_eagain_first;/* 1 = answer the first WAIT -EAGAIN 
 int           cact_host_futex_wait_ret = -4;      /* -EINTR */
 
 /* Mirrors cact_futex_arg_t (include/ioctl_abi.h), which the unit's code passes
- * through nio_ioctl(): { uaddr, op, val, timeout_ms }. */
-struct host_futex_arg { unsigned int uaddr; int op; int val; int timeout_ms; };
+ * through nio_ioctl(): { uaddr, op, val, timeout_ms }.  The word is
+ * pointer-width — a futex address is a user VA. */
+struct host_futex_arg { uint64_t uaddr; int op; int val; int timeout_ms; };
 
 #define HOST_PROCCTL_FUTEX     0x3214u   /* CACT_PROCCTL_FUTEX */
 #define HOST_FUTEX_WAIT        0          /* CACT_FUTEX_WAIT/_WAIT_SHARED */

@@ -45,9 +45,9 @@ int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact)
      * so take whichever one the flags select.  With SA_SIGINFO the kernel
      * builds a siginfo_t and a ucontext_t into the signal frame and enters the
      * routine as void (*)(int, siginfo_t *, void *). */
-    uint32_t h = (uint32_t)(uintptr_t)act->sa_handler;
+    uint64_t h = (uint64_t)(uintptr_t)act->sa_handler;
     if ((act->sa_flags & SA_SIGINFO) && act->sa_sigaction)
-        h = (uint32_t)(uintptr_t)act->sa_sigaction;
+        h = (uint64_t)(uintptr_t)act->sa_sigaction;
 
     cact_sigaction_arg_t a;
     a.signum  = (uint32_t)idx;
@@ -81,7 +81,7 @@ int sigaltstack(const stack_t *ss, stack_t *old_ss) {
         } else {
             if (!ss->ss_sp) { errno = EINVAL; return -1; }
             if (ss->ss_size < MINSIGSTKSZ) { errno = ENOMEM; return -1; }
-            a.sp   = (uint32_t)(uintptr_t)ss->ss_sp;
+            a.sp   = (uint64_t)(uintptr_t)ss->ss_sp;
             a.size = (uint32_t)ss->ss_size;
         }
     }

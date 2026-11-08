@@ -218,7 +218,7 @@ int chroot(const char *path) {
 
 off_t lseek(int fd, off_t offset, int whence) {
     cact_lseek_arg_t a;
-    a.offset = (int32_t)offset;
+    a.offset = (int64_t)offset;
     a.whence = (uint32_t)whence;
     return (off_t)nio_map(nio_ioctl(fd, CACT_FDCTL_LSEEK, &a));
 }
@@ -415,14 +415,14 @@ int truncate(const char *path, off_t length) {
     if (fd < 0) return -1;
     cact_truncate_arg_t a;
     a.name   = base;
-    a.length = (uint32_t)length;
+    a.length = (uint64_t)length;
     int r = nio_ioctl(fd, CACT_DIRCTL_TRUNCATE, &a);
     nio_close(fd);
     return nio_map(r);
 }
 
 int ftruncate(int fd, off_t length) {
-    uint32_t len = (uint32_t)length;
+    uint64_t len = (uint64_t)length;
     return nio_map(nio_ioctl(fd, CACT_FDCTL_FTRUNCATE, &len));
 }
 

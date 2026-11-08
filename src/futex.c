@@ -20,7 +20,7 @@ int cact_ctl(unsigned long cmd, void *arg) {
 
 static int futex_op(volatile int *uaddr, int op, int val, int timeout_ms) {
     cact_futex_arg_t a;
-    a.uaddr      = (uint32_t)(uintptr_t)uaddr;
+    a.uaddr      = (uint64_t)(uintptr_t)uaddr;
     a.op         = op;
     a.val        = val;
     a.timeout_ms = timeout_ms;

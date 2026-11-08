@@ -46,6 +46,14 @@ int cact_pthread_create(pthread_t *thread, const struct cact_attr *attr,
 
 static int checks, fails;
 
+/* src/thread_start.S is not part of this unit's source list: it is the
+ * trampoline a real thread is entered through (`iretq` into it, %rdi set from
+ * the words pthread_create leaves on the thread stack), and a host test has no
+ * kernel to enter one.  pthread_create() only ever stores its address in the
+ * argument it would hand the kernel, and every call below returns before that,
+ * so the symbol only has to exist for the link. */
+void __cact_thread_entry(void) { }
+
 #define CK(cond, ...) do { \
     checks++; \
     if (!(cond)) { fails++; printf("FAIL %s:%d ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } \
