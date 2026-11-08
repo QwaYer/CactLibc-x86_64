@@ -302,7 +302,7 @@ static inline intptr_t __syscall3(int num, uintptr_t a1, uintptr_t a2, uintptr_t
 }
 ```
 
-> ⚠️ The kernel's entry borrows the word at **`[rsp-8]`** to carry the syscall number while it finds the kernel stack — that word is the bottom of the SysV red zone, so the libc is built **`-mno-red-zone`** (`meson.build`). A leaf function that kept a local there would find it overwritten by every syscall it made.
+> ℹ️ `syscall` does not switch stacks, but the kernel's entry loads the CPU's kernel stack (`%gs:8`) and keeps the user rsp in **`r10`**, so it never writes below the user rsp: the SysV red zone survives a syscall untouched, and the libc is built with the red zone **enabled** (the default, see `meson.build`).
 
 Many traps take a **pointer/struct** (e.g. `SYS_MMAP`); the kernel dispatches those through its full frame path — `_needs_frame()` in CactKernel **`mod.c`**.
 

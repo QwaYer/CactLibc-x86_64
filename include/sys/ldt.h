@@ -6,7 +6,12 @@
  * task's `%fs` base, so the function is source-compatible with the Linux i386
  * one while the rest of the structure has nothing to describe and is ignored
  * (limit, the segment flags and the chosen entry_number all have no effect;
- * (unsigned)-1 for entry_number — "pick one" — is equally a no-op). */
+ * (unsigned)-1 for entry_number — "pick one" — is equally a no-op).
+ *
+ * `base_addr` must be a user address, 16-byte aligned (the x86_64 ABI's
+ * requirement for the thread pointer) or zero; anything else is EINVAL.  The
+ * static TLS layout rounds its block to 16, so what __cact_tls_start() installs
+ * always satisfies it. */
 
 struct user_desc {
     unsigned int  entry_number;

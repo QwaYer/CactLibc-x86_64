@@ -41,11 +41,10 @@ intptr_t syscall(int num, uintptr_t p1, uintptr_t p2, uintptr_t p3);
  * Return value in RAX.  The kernel returns through iretq, so every register
  * other than RAX/RCX/R11 comes back exactly as the caller left it.
  *
- * A note on the stack: the kernel's entry borrows one word of the *user* stack
- * ([rsp-8]) to carry the syscall number while it locates the kernel stack, and
- * restores rsp on return.  That word is inside the SysV red zone, so the libc
- * is built with -mno-red-zone (see meson.build) — otherwise a leaf function
- * compiling its locals at [rsp-8] would find them overwritten by every syscall.
+ * A note on the stack: `syscall` does not switch stacks, but the kernel's entry
+ * goes straight from the user rsp to this CPU's kernel stack (one %gs-relative
+ * load, with the user rsp kept in r10), so it writes nothing below the user rsp
+ * — the SysV red zone survives a syscall and no -mno-red-zone is needed.
  *
  * The libc test suite also compiles these units for the build machine, which is
  * x86_64 as well and has no kernel behind the instruction, so the stub

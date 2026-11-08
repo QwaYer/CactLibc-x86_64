@@ -234,7 +234,7 @@ typedef struct cact_uname {
 #define CACT_PROCCTL_GET_TID     0x3215  // self; arg=NULL; returns the calling task's tid
 #define CACT_PROCCTL_KILLPG      0x3216  // self; arg=cact_killpg_arg_t*  (killpg(pgid,sig))
 #define CACT_PROCCTL_SIGALTSTACK 0x3217  // self; arg=cact_sigaltstack_arg_t* (sigaltstack(2))
-#define CACT_PROCCTL_SET_TLS     0x3218  // self; arg=uint64_t* (the %gs thread pointer)
+#define CACT_PROCCTL_SET_TLS     0x3218  // self; arg=uint64_t* (the %fs thread pointer)
 #define CACT_PROCCTL_YIELD       0x3219  // self; arg=NULL; give up the CPU to another runnable task (sched_yield)
 #define CACT_PROCCTL_SIGWAIT     0x321A  // self; arg=cact_sigwait_arg_t* (sigwait/sigwaitinfo/sigtimedwait)
 #define CACT_PROCCTL_SIGQUEUE    0x321B  // self; arg=cact_sigqueue_arg_t* (sigqueue(2))
@@ -243,7 +243,7 @@ typedef struct cact_thread_create_arg {
     void*    entry;      // user entry point (called as entry(arg))
     uint64_t user_esp;   // initial user stack pointer (libc lays out the frame)
     uint32_t flags;      // reserved, 0
-    uint64_t tls;        // this thread's %gs base (0 = none)
+    uint64_t tls;        // this thread's %fs base (0 = none)
     uint64_t set_child_tid;   // kernel writes the new tid here before it runs (0 = none)
     uint64_t clear_child_tid; // join futex word the kernel zeroes on exit (0 = none)
 } cact_thread_create_arg_t;
