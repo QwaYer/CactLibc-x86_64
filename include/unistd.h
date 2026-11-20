@@ -32,6 +32,9 @@ typedef unsigned dev_t;
 #define RB_AUTOBOOT  0x01234567
 #define RB_HALT_SYSTEM 0xCDEF0123
 #define RB_POWER_OFF 0x4321FEDC
+/* Suspend to RAM (ACPI S3).  Not a Linux reboot(2) code: the value matches the
+ * kernel's CACT_REBOOT_SUSPEND (Cact/kernel/core/syscall/ioctl_abi.h). */
+#define RB_SUSPEND   0x53555350
 
 /* ── process lifecycle ── */
 ssize_t read(int fd, void *buf, size_t count);
