@@ -224,15 +224,45 @@ int pthread_mutex_unlock(pthread_mutex_t *mutex) {
 
 /* ── condition variable ─────────────────────────────────────────────────── */
 
+/* The condition's futex word is a generation counter; its top bit also records
+ * which clock the absolute timeouts are against, because pthread_cond_t has no
+ * spare field and growing it would break every consumer already compiled
+ * against it.  The bit rides along with each increment, so the whole-word futex
+ * comparisons are unaffected. */
+#define CACT_COND_MONOTONIC 0x40000000
+
 int pthread_cond_init(pthread_cond_t *cond, const pthread_condattr_t *attr) {
     if (!cond) return EINVAL;
-    (void)attr;
-    cond->seq = 0;
+    cond->seq = (attr && attr->clock == CLOCK_MONOTONIC) ? CACT_COND_MONOTONIC : 0;
     return 0;
 }
 
 int pthread_cond_destroy(pthread_cond_t *cond) {
     (void)cond;
+    return 0;
+}
+
+int pthread_condattr_init(pthread_condattr_t *attr) {
+    if (!attr) return EINVAL;
+    attr->clock = CLOCK_REALTIME;
+    return 0;
+}
+
+int pthread_condattr_destroy(pthread_condattr_t *attr) {
+    (void)attr;
+    return 0;
+}
+
+int pthread_condattr_setclock(pthread_condattr_t *attr, int clock_id) {
+    if (!attr) return EINVAL;
+    if (clock_id != CLOCK_REALTIME && clock_id != CLOCK_MONOTONIC) return EINVAL;
+    attr->clock = (uint32_t)clock_id;
+    return 0;
+}
+
+int pthread_condattr_getclock(const pthread_condattr_t *attr, int *clock_id) {
+    if (!attr || !clock_id) return EINVAL;
+    *clock_id = (int)attr->clock;
     return 0;
 }
 
@@ -252,8 +282,12 @@ int pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
                            const struct timespec *abstime) {
     if (!cond || !mutex || !abstime) return EINVAL;
 
+    /* Which clock `abstime` is against is recorded in the condition's word (see
+     * CACT_COND_MONOTONIC); the default is CLOCK_REALTIME. */
+    int clock_id = (__atomic_load_n((int *)&cond->seq, __ATOMIC_RELAXED) & CACT_COND_MONOTONIC)
+                       ? CLOCK_MONOTONIC : CLOCK_REALTIME;
     struct timespec now;
-    clock_gettime(CLOCK_REALTIME, &now);
+    clock_gettime(clock_id, &now);
     long ms = (abstime->tv_sec - now.tv_sec) * 1000L +
               (abstime->tv_nsec - now.tv_nsec) / 1000000L;
     int timeout = (ms <= 0) ? 0 : (int)ms;
@@ -279,6 +313,179 @@ int pthread_cond_broadcast(pthread_cond_t *cond) {
     if (!cond) return EINVAL;
     __atomic_fetch_add((int *)&cond->seq, 1, __ATOMIC_RELEASE);
     cact_futex_wake(&cond->seq, 0x7fffffff);
+    return 0;
+}
+
+/* ── barriers ───────────────────────────────────────────────────────────── */
+
+int pthread_barrierattr_init(pthread_barrierattr_t *attr) {
+    if (!attr) return EINVAL;
+    attr->__x = 0;
+    return 0;
+}
+
+int pthread_barrierattr_destroy(pthread_barrierattr_t *attr) {
+    (void)attr;
+    return 0;
+}
+
+int pthread_barrier_init(pthread_barrier_t *barrier,
+                         const pthread_barrierattr_t *attr, unsigned count) {
+    if (!barrier || count == 0) return EINVAL;
+    (void)attr;
+    pthread_mutex_init(&barrier->mutex, NULL);
+    pthread_cond_init(&barrier->cond, NULL);
+    barrier->trip       = count;
+    barrier->arrived    = 0;
+    barrier->generation = 0;
+    return 0;
+}
+
+int pthread_barrier_destroy(pthread_barrier_t *barrier) {
+    if (!barrier) return EINVAL;
+    pthread_mutex_destroy(&barrier->mutex);
+    pthread_cond_destroy(&barrier->cond);
+    return 0;
+}
+
+int pthread_barrier_wait(pthread_barrier_t *barrier) {
+    if (!barrier) return EINVAL;
+
+    pthread_mutex_lock(&barrier->mutex);
+    unsigned gen = barrier->generation;
+
+    if (++barrier->arrived == barrier->trip) {
+        /* Last to arrive: open the gate for this whole generation. */
+        barrier->arrived = 0;
+        barrier->generation++;
+        pthread_cond_broadcast(&barrier->cond);
+        pthread_mutex_unlock(&barrier->mutex);
+        return PTHREAD_BARRIER_SERIAL_THREAD;
+    }
+
+    /* Leave only once the generation moves past the one we arrived in. */
+    while (barrier->generation == gen)
+        pthread_cond_wait(&barrier->cond, &barrier->mutex);
+    pthread_mutex_unlock(&barrier->mutex);
+    return 0;
+}
+
+/* ── readers-writer locks ───────────────────────────────────────────────── */
+
+int pthread_rwlockattr_init(pthread_rwlockattr_t *attr) {
+    if (!attr) return EINVAL;
+    attr->__x = 0;
+    return 0;
+}
+
+int pthread_rwlockattr_destroy(pthread_rwlockattr_t *attr) {
+    (void)attr;
+    return 0;
+}
+
+int pthread_rwlock_init(pthread_rwlock_t *rwlock, const pthread_rwlockattr_t *attr) {
+    if (!rwlock) return EINVAL;
+    (void)attr;
+    pthread_mutex_init(&rwlock->mutex, NULL);
+    pthread_cond_init(&rwlock->cond, NULL);
+    rwlock->readers         = 0;
+    rwlock->writer          = 0;
+    rwlock->waiting_writers = 0;
+    return 0;
+}
+
+int pthread_rwlock_destroy(pthread_rwlock_t *rwlock) {
+    if (!rwlock) return EINVAL;
+    pthread_mutex_destroy(&rwlock->mutex);
+    pthread_cond_destroy(&rwlock->cond);
+    return 0;
+}
+
+int pthread_rwlock_rdlock(pthread_rwlock_t *rwlock) {
+    if (!rwlock) return EINVAL;
+    pthread_mutex_lock(&rwlock->mutex);
+    /* Wait while a writer holds the lock, or while one is queued — the queue
+     * check is what keeps a stream of readers from starving the writers. */
+    while (rwlock->writer || rwlock->waiting_writers)
+        pthread_cond_wait(&rwlock->cond, &rwlock->mutex);
+    rwlock->readers++;
+    pthread_mutex_unlock(&rwlock->mutex);
+    return 0;
+}
+
+int pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock) {
+    if (!rwlock) return EINVAL;
+    pthread_mutex_lock(&rwlock->mutex);
+    if (rwlock->writer || rwlock->waiting_writers) {
+        pthread_mutex_unlock(&rwlock->mutex);
+        return EBUSY;
+    }
+    rwlock->readers++;
+    pthread_mutex_unlock(&rwlock->mutex);
+    return 0;
+}
+
+int pthread_rwlock_wrlock(pthread_rwlock_t *rwlock) {
+    if (!rwlock) return EINVAL;
+    pthread_mutex_lock(&rwlock->mutex);
+    rwlock->waiting_writers++;
+    while (rwlock->writer || rwlock->readers)
+        pthread_cond_wait(&rwlock->cond, &rwlock->mutex);
+    rwlock->waiting_writers--;
+    rwlock->writer = 1;
+    pthread_mutex_unlock(&rwlock->mutex);
+    return 0;
+}
+
+int pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock) {
+    if (!rwlock) return EINVAL;
+    pthread_mutex_lock(&rwlock->mutex);
+    if (rwlock->writer || rwlock->readers) {
+        pthread_mutex_unlock(&rwlock->mutex);
+        return EBUSY;
+    }
+    rwlock->writer = 1;
+    pthread_mutex_unlock(&rwlock->mutex);
+    return 0;
+}
+
+int pthread_rwlock_unlock(pthread_rwlock_t *rwlock) {
+    if (!rwlock) return EINVAL;
+    pthread_mutex_lock(&rwlock->mutex);
+    if (rwlock->writer) {
+        rwlock->writer = 0;
+    } else if (rwlock->readers > 0) {
+        rwlock->readers--;
+    } else {
+        pthread_mutex_unlock(&rwlock->mutex);
+        return EPERM;
+    }
+    pthread_cond_broadcast(&rwlock->cond);
+    pthread_mutex_unlock(&rwlock->mutex);
+    return 0;
+}
+
+/* ── signal mask, thread name, cpu clock ────────────────────────────────── */
+
+int pthread_sigmask(int how, const sigset_t *set, sigset_t *oldset) {
+    /* CactOS's mask is per-task and delivery is process-wide, so this is
+     * sigprocmask()'s work (see <pthread.h>). */
+    return sigprocmask(how, set, oldset);
+}
+
+int pthread_setname_np(pthread_t thread, const char *name) {
+    /* The kernel keeps no thread names. */
+    (void)thread;
+    (void)name;
+    return 0;
+}
+
+int pthread_getcpuclockid(pthread_t thread, clockid_t *clock_id) {
+    /* No per-thread CPU accounting exists; the monotonic clock is the stand-in
+     * (see <pthread.h>), so the caller gets a real monotone value. */
+    (void)thread;
+    if (!clock_id) return EINVAL;
+    *clock_id = CLOCK_MONOTONIC;
     return 0;
 }
 
