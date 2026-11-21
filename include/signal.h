@@ -54,6 +54,12 @@ typedef uint32_t sigset_t;
 #define SIGUSR1  (1u << 17)
 #define SIGUSR2  (1u << 18)
 
+/* CactOS has no SIGSYS: the kernel never generates it (there is no seccomp) and
+ * there is no slot for it — the mask's slots are bits 0..KERNEL_NSIG-1.  The
+ * constant exists so a Linux-shaped caller compiles; every sig* call rejects it
+ * with EINVAL, which is correct for a signal this system does not have. */
+#define SIGSYS   (1u << 19)
+
 /* ioctl requests for terminal window size */
 #define TIOCGWINSZ 0x5413
 #define TIOCSWINSZ 0x5414

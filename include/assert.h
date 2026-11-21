@@ -15,6 +15,14 @@ extern "C" {
 #define assert(x) ((void)0)
 #endif
 
+/* C11's <assert.h> supplies static_assert for C (in C23 it is also a keyword).
+ * Mesa's ralloc.c uses it in C translation units. */
+#if !defined(__cplusplus) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#ifndef static_assert
+#define static_assert _Static_assert
+#endif
+#endif
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

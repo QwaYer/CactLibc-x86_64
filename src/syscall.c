@@ -1,4 +1,5 @@
 #include "syscall.h"
+#include "unistd.h"
 #include <stdarg.h>
 #include <stdint.h>
 
@@ -14,6 +15,12 @@
  * a caller that passes fewer leaves the unused words undefined, which is the
  * caller's business (every in-tree caller passes three). */
 intptr_t syscall(int num, ...) {
+    /* SYS_gettid has no kernel entry (see <syscall.h>): CactOS serves the tid
+     * through /proc/self, so answer the Linux-shaped call here — in userspace,
+     * which is where that data lives on this system. */
+    if (num == SYS_gettid)
+        return (intptr_t)gettid();
+
     va_list ap;
     va_start(ap, num);
     uintptr_t p1 = va_arg(ap, uintptr_t);

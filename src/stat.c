@@ -3,7 +3,40 @@
 #include "nodeio.h"
 #include "fcntl.h"
 #include "errno.h"
+#include "stat.h"
+#include "utime.h"
 #include <stdint.h>
+
+/* fstatat(2).  CactOS's VFS cannot name the node behind a descriptor (see the
+ * fchmod note above), so a name *relative to a directory descriptor* is not
+ * resolvable; AT_FDCWD and an absolute name are, and AT_EMPTY_PATH stats the
+ * descriptor itself. */
+int fstatat(int dirfd, const char *pathname, struct stat *buf, int flags) {
+    if (!pathname || !buf) { errno = EINVAL; return -1; }
+
+    if (pathname[0] == '\0') {
+        if (flags & AT_EMPTY_PATH) return fstat(dirfd, buf);
+        errno = ENOENT;
+        return -1;
+    }
+    if (dirfd != AT_FDCWD && pathname[0] != '/') {
+        errno = ENOSYS;   /* no fd -> path mapping */
+        return -1;
+    }
+    if (flags & AT_SYMLINK_NOFOLLOW)
+        return lstat(pathname, buf);   /* lstat goes through statx, which honours the flag */
+    return stat(pathname, buf);
+}
+
+/* CactOS's VFS cannot set a file's times — the kernel exposes no ioctl for them
+ * and there is no futimens() either (see <utime.h>).  Report the gap honestly
+ * instead of returning success. */
+int utime(const char *path, const struct utimbuf *times) {
+    (void)times;
+    if (!path) { errno = ENOENT; return -1; }
+    errno = ENOSYS;
+    return -1;
+}
 
 /* stat()/fstat() go through the kernel's small `cact_stat_t`, which carries only
  * ino/mode/size/type/rdev (the leading 24 bytes of struct stat).  A ported

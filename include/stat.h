@@ -83,6 +83,16 @@ int chmod(const char *path, int mode);
 int fchmod(int fd, mode_t mode);
 int chown(const char *path, int uid, int gid);
 
+/* fstatat(2).  CactOS's VFS has no descriptor-to-path mapping, so a name
+ * *relative to a directory descriptor* cannot be resolved — AT_FDCWD or an
+ * absolute name works.  The AT_* values are Linux's, and AT_SYMLINK_NOFOLLOW
+ * carries the same bit the kernel's statx honours (CACT_AT_SYMLINK_NOFOLLOW). */
+#define AT_FDCWD            (-100)
+#define AT_SYMLINK_NOFOLLOW 0x100
+#define AT_SYMLINK_FOLLOW   0x400
+#define AT_EMPTY_PATH       0x1000
+int fstatat(int dirfd, const char *pathname, struct stat *buf, int flags);
+
 #include <ioctl_abi.h>
 
 // Rich stat; `flags` may set CACT_AT_SYMLINK_NOFOLLOW.

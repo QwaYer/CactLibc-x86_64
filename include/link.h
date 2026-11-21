@@ -21,6 +21,10 @@ extern "C" {
 
 #include <stddef.h>
 #include "dl_elf.h"
+/* As glibc's <link.h> does: a consumer that reaches the program headers through
+ * dl_iterate_phdr() also gets the ELF types and ElfW(), which is how Mesa's
+ * build_id.c names ElfW(Nhdr)/PT_NOTE. */
+#include "elf.h"
 
 struct dl_phdr_info {
     unsigned long     dlpi_addr;      /* load bias — always 0 here */

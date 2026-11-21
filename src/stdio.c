@@ -146,6 +146,11 @@ long ftell(FILE *stream) {
     return (long)lseek(stream->fd, 0, SEEK_CUR);
 }
 
+void rewind(FILE *stream) {
+    (void)lseek(stream->fd, 0, SEEK_SET);
+    clearerr(stream);
+}
+
 int fflush(FILE *stream) {
     (void)stream;
     return 0;

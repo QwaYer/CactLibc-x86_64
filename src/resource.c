@@ -40,3 +40,19 @@ int setrlimit(int resource, const struct rlimit *rlim) {
     errno = ENOSYS;
     return -1;
 }
+
+/* The MLFQ has no nice levels (see <sched.h>): the default level is 0, and no
+ * request to change it can be honoured. */
+int getpriority(int which, int who) {
+    (void)which;
+    (void)who;
+    return 0;
+}
+
+int setpriority(int which, int who, int prio) {
+    (void)which;
+    (void)who;
+    (void)prio;
+    errno = ENOSYS;
+    return -1;
+}

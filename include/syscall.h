@@ -32,6 +32,14 @@ extern "C" {
 #define SYS_MPROTECT  13
 #define SYS_SIGRETURN 14
 
+/* Pseudo-number answered in the library, not by the kernel: CactOS's syscall
+ * ABI has no gettid (the tid is a /proc/self datum here — see CactLibc's
+ * gettid()), but a ported program reaches for the Linux `syscall(SYS_gettid)`
+ * idiom (Mesa's thread-priority path does).  src/syscall.c returns gettid() for
+ * it; a raw syscall instruction with this number would get -1 from the kernel,
+ * so nothing else should use the value. */
+#define SYS_gettid    15
+
 #define STDIN_FILENO  0
 #define STDOUT_FILENO 1
 #define STDERR_FILENO 2

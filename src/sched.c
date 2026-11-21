@@ -72,3 +72,9 @@ int sched_rr_get_interval(pid_t pid, struct timespec *interval) {
 int sched_yield(void) {
     return nio_map(nio_ctl(CACT_PROCCTL_YIELD, 0));
 }
+
+int sched_getcpu(void) {
+    /* The kernel exposes no per-task CPU id, so report CPU 0 — the callers that
+     * use this take it as a locality hint, not as a fact about placement. */
+    return 0;
+}

@@ -3,6 +3,7 @@
 #include "syscall.h"
 #include "nodeio.h"
 #include "errno.h"
+#include "stat.h"      /* struct stat, fstat (posix_fallocate) */
 #include <stdarg.h>
 #include <stdint.h>
 
@@ -97,4 +98,18 @@ int fcntl(int fd, int cmd, ...) {
 int creat(const char *pathname, int mode) {
     (void)mode;
     return open(pathname, O_WRONLY | O_CREAT | O_TRUNC);
+}
+
+/* POSIX's own fallback for a system without fallocate: grow the file to cover
+ * [offset, offset+len) with ftruncate, and do nothing if it is already large
+ * enough.  Returns 0 or an error number (not -1/errno), as POSIX specifies. */
+int posix_fallocate(int fd, off_t offset, off_t len) {
+    if (offset < 0 || len <= 0) return EINVAL;
+
+    struct stat st;
+    if (fstat(fd, &st) != 0) return errno;
+
+    off_t end = offset + len;
+    if (st.st_size < end && ftruncate(fd, end) != 0) return errno;
+    return 0;
 }

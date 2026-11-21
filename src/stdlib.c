@@ -133,6 +133,13 @@ char *getenv(const char *name) {
     return 0;
 }
 
+/* glibc returns NULL here when the process runs with elevated privilege
+ * (AT_SECURE).  CactOS has no setuid/setcap and never sets AT_SECURE, so
+ * nothing is ever privileged and the answer is simply getenv(). */
+char *secure_getenv(const char *name) {
+    return getenv(name);
+}
+
 int system(const char *command) {
     if (!command) return 1;
     pid_t pid = fork();

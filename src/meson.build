@@ -3,6 +3,7 @@
 # as the Makefile did with build/ and build/pic/.
 libc_c_sources = files(
   'atfork.c',
+  'auxv.c',
   'crypto.c',
   'ctype.c',
   'dirent.c',
@@ -17,9 +18,11 @@ libc_c_sources = files(
   'fenv.c',
   'flock.c',
   'fnmatch.c',
+  'ftw.c',
   'futex.c',
   'getopt.c',
   'glob.c',
+  'inotify.c',
   'libgen.c',
   'locale.c',
   'math.c',
@@ -50,6 +53,7 @@ libc_c_sources = files(
   'string.c',
   'syscall.c',
   'sysconf.c',
+  'syslog.c',
   'termios.c',
   'thread_local.c',
   'time.c',

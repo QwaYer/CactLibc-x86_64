@@ -191,6 +191,8 @@ int  getpagesize(void);
 #define _SC_NPROCESSORS_ONLN 6
 #define _SC_VERSION          7
 #define _SC_GETPW_R_SIZE_MAX 8
+#define _SC_PHYS_PAGES       9      /* total RAM, in pages (from /proc/meminfo) */
+#define _SC_AVPHYS_PAGES     10     /* free RAM, in pages                     */
 long sysconf(int name);
 
 #ifdef __cplusplus

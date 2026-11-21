@@ -11,6 +11,12 @@ extern "C" {
 
 typedef long time_t;
 
+/* Clock and timer identifiers.  CactOS has CLOCK_REALTIME and CLOCK_MONOTONIC
+ * (see clock_gettime) and no POSIX per-process timers, so timer_t names nothing
+ * the kernel can start; both types exist so a consumer's declarations compile. */
+typedef int clockid_t;
+typedef int timer_t;
+
 struct tm {
     int tm_sec;
     int tm_min;

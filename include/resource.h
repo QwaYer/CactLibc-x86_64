@@ -72,6 +72,16 @@ int getrusage(int who, struct rusage *usage);
 int getrlimit(int resource, struct rlimit *rlim);
 int setrlimit(int resource, const struct rlimit *rlim);
 
+/* getpriority()/setpriority().  CactOS's MLFQ has no nice levels (see
+ * <sched.h>), so getpriority() reports the default 0 and setpriority() reports
+ * ENOSYS rather than pretend a level was set. */
+#define PRIO_PROCESS 0
+#define PRIO_PGRP    1
+#define PRIO_USER    2
+
+int getpriority(int which, int who);
+int setpriority(int which, int who, int prio);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

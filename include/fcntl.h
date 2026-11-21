@@ -67,6 +67,12 @@ int open(const char *pathname, int flags, ...);
 int creat(const char *pathname, int mode);
 int fcntl(int fd, int cmd, ...);
 
+/* Reserve space for a file without writing it.  CactOS has no fallocate, so this
+ * is POSIX's own fallback: grow the file with ftruncate() (which fills with
+ * zeros), and do nothing if it is already that large.  Returns 0 or an error
+ * number, as POSIX specifies. */
+int posix_fallocate(int fd, off_t offset, off_t len);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

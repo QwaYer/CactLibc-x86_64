@@ -43,6 +43,10 @@ int atexit(void (*function)(void));
  * otherwise warns that a noreturn function can return. */
 void abort(void) __attribute__((noreturn));
 char *getenv(const char *name);
+/* Like getenv(), except that a program running with elevated privilege gets
+ * NULL.  CactOS has no setuid/setcap and no AT_SECURE, so nothing is ever
+ * privileged and this is getenv(). */
+char *secure_getenv(const char *name);
 int system(const char *command);
 int putenv(char *string);
 int setenv(const char *name, const char *value, int overwrite);

@@ -25,6 +25,25 @@ static int cpu_count(void) {
     return count > 0 ? count : 1;
 }
 
+/* A "<label>: <n> kB" line of /proc/meminfo, converted to pages.  -1 means
+ * "unknown", which is what sysconf's callers treat as an unsupported limit. */
+static long mem_pages(const char *label) {
+    static char buf[4096];
+    int n = nio_read_file("/proc/meminfo", buf, sizeof(buf) - 1);
+    if (n <= 0) return -1;
+    buf[n] = '\0';
+
+    const char *p = strstr(buf, label);
+    if (!p) return -1;
+    p += strlen(label);
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p < '0' || *p > '9') return -1;
+
+    long kb = 0;
+    while (*p >= '0' && *p <= '9') kb = kb * 10 + (*p++ - '0');
+    return kb / (CACT_PAGE_SIZE / 1024);
+}
+
 long sysconf(int name) {
     switch (name) {
     case _SC_PAGESIZE:         return CACT_PAGE_SIZE;
@@ -38,6 +57,8 @@ long sysconf(int name) {
     case _SC_GETPW_R_SIZE_MAX: return -1;
     case _SC_NPROCESSORS_CONF:
     case _SC_NPROCESSORS_ONLN: return cpu_count();
+    case _SC_PHYS_PAGES:       return mem_pages("MemTotal:");
+    case _SC_AVPHYS_PAGES:     return mem_pages("MemFree:");
     default:
         errno = EINVAL;
         return -1;

@@ -23,6 +23,13 @@ extern "C" {
 
 int eventfd(unsigned int initval, int flags);
 
+/* The counter type and the read/write helpers glibc declares alongside it: a
+ * counter value is one 8-byte word, so the helpers are plain read/write of it. */
+typedef uint64_t eventfd_t;
+
+int eventfd_read(int fd, eventfd_t *value);
+int eventfd_write(int fd, eventfd_t value);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
