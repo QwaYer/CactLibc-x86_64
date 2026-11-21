@@ -565,9 +565,119 @@ double erf(double x) {
     return sum * CACT_2_SQRTPI;
 }
 
-/* ── single-precision entry points (see <math.h>) ───────────────────────── */
+/* ── the rest of C99 7.12 ───────────────────────────────────────────────── */
 
-float logf(float x)           { return (float)log((double)x); }
-float log2f(float x)          { return (float)log2((double)x); }
-float ceilf(float x)          { return (float)ceil((double)x); }
+double fmax(double x, double y) {
+    if (x != x) return y;
+    if (y != y) return x;
+    return (x > y) ? x : y;
+}
+
+double fmin(double x, double y) {
+    if (x != x) return y;
+    if (y != y) return x;
+    return (x < y) ? x : y;
+}
+
+/* The round-to-integer forms: lrint/llrint follow the current rounding mode
+ * (rint is frndint), lround/llround round half away from zero (round). */
+long      lrint(double x)  { return (long)rint(x); }
+long long llrint(double x) { return (long long)rint(x); }
+long      lround(double x) { return (long)round(x); }
+long long llround(double x){ return (long long)round(x); }
+double    nearbyint(double x) { return rint(x); }
+
+double copysign(double x, double y) {
+    union { double d; uint64_t u; } a, b;
+    a.d = x; b.d = y;
+    a.u = (a.u & 0x7fffffffffffffffULL) | (b.u & 0x8000000000000000ULL);
+    return a.d;
+}
+
+double nextafter(double x, double y) {
+    union { double d; uint64_t u; } a, b;
+    a.d = x; b.d = y;
+    if (x != x || y != y) return x + y;                 /* a NaN in, a NaN out */
+    if (x == y) return y;
+    if (x == 0.0) { a.u = (b.u & 0x8000000000000000ULL) | 1ULL; return a.d; }
+    if ((x < y) == (x > 0.0)) a.u += 1; else a.u -= 1;
+    return a.d;
+}
+
+double fdim(double x, double y) { return (x > y) ? x - y : 0.0; }
+
+/* No fused step (the x87 has no FMA the way SSE/AVX2 does): one rounding of the
+ * product and one of the sum.  Accurate enough for the ports; noted so a later
+ * reader does not mistake it for a correctly rounded fma. */
+double fma(double x, double y, double z) { return x * y + z; }
+
+double hypot(double x, double y) {
+    if (x != x || y != y) return x + y;
+    if (isinf(x) || isinf(y)) return CACT_INF;
+    return sqrt(x * x + y * y);
+}
+
+double cbrt(double x) {
+    if (x != x || x == 0.0) return x;
+    double r = pow(fabs(x), 1.0 / 3.0);
+    return (x < 0.0) ? -r : r;
+}
+
+double exp2(double x)  { return pow(2.0, x); }
+double expm1(double x) { return exp(x) - 1.0; }
+
+double asinh(double x) {
+    if (x != x) return x;
+    double a = fabs(x) + sqrt(x * x + 1.0);
+    return (x < 0.0) ? -_ln(a) : _ln(a);
+}
+double acosh(double x) { return _ln(x + sqrt(x * x - 1.0)); }
+double atanh(double x) { return 0.5 * _ln((1.0 + x) / (1.0 - x)); }
+
+double remainder(double x, double y) { return x - rint(x / y) * y; }
+double scalbn(double x, int n)       { return ldexp(x, n); }
+
+/* Single-precision entry points: the double result, narrowed. */
+float fabsf(float x)       { return (float)fabs((double)x); }
+float floorf(float x)      { return (float)floor((double)x); }
+float ceilf(float x)       { return (float)ceil((double)x); }
+float truncf(float x)      { return (float)trunc((double)x); }
+float roundf(float x)      { return (float)round((double)x); }
+float rintf(float x)       { return (float)rint((double)x); }
+float nearbyintf(float x)  { return (float)nearbyint((double)x); }
 float fmodf(float x, float y) { return (float)fmod((double)x, (double)y); }
+float fmaxf(float x, float y) { return (float)fmax((double)x, (double)y); }
+float fminf(float x, float y) { return (float)fmin((double)x, (double)y); }
+float copysignf(float x, float y)  { return (float)copysign((double)x, (double)y); }
+float nextafterf(float x, float y) { return (float)nextafter((double)x, (double)y); }
+float fdimf(float x, float y)      { return (float)fdim((double)x, (double)y); }
+float fmaf(float x, float y, float z) { return (float)fma((double)x, (double)y, (double)z); }
+float hypotf(float x, float y)     { return (float)hypot((double)x, (double)y); }
+float cbrtf(float x)       { return (float)cbrt((double)x); }
+float sqrtf(float x)       { return (float)sqrt((double)x); }
+float sinf(float x)        { return (float)sin((double)x); }
+float cosf(float x)        { return (float)cos((double)x); }
+float tanf(float x)        { return (float)tan((double)x); }
+float asinf(float x)       { return (float)asin((double)x); }
+float acosf(float x)       { return (float)acos((double)x); }
+float atanf(float x)       { return (float)atan((double)x); }
+float atan2f(float y, float x) { return (float)atan2((double)y, (double)x); }
+float expf(float x)        { return (float)exp((double)x); }
+float exp2f(float x)       { return (float)exp2((double)x); }
+float expm1f(float x)      { return (float)expm1((double)x); }
+float logf(float x)        { return (float)log((double)x); }
+float log10f(float x)      { return (float)log10((double)x); }
+float log2f(float x)       { return (float)log2((double)x); }
+float log1pf(float x)      { return (float)log1p((double)x); }
+float powf(float x, float y) { return (float)pow((double)x, (double)y); }
+float sinhf(float x)       { return (float)sinh((double)x); }
+float coshf(float x)       { return (float)cosh((double)x); }
+float tanhf(float x)       { return (float)tanh((double)x); }
+float asinhf(float x)      { return (float)asinh((double)x); }
+float acoshf(float x)      { return (float)acosh((double)x); }
+float atanhf(float x)      { return (float)atanh((double)x); }
+float erff(float x)        { return (float)erf((double)x); }
+long      lrintf(float x)  { return (long)rintf(x); }
+long long llrintf(float x) { return (long long)rintf(x); }
+long      lroundf(float x) { return (long)roundf(x); }
+long long llroundf(float x){ return (long long)roundf(x); }

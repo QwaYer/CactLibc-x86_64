@@ -87,15 +87,79 @@ double cosh(double x);
 double tanh(double x);
 double erf(double x);
 
-/* Single-precision entry points a ported program names.  Only the ones the
- * ports have needed so far are here — there is no full `*f` set — and each is
- * computed by the double version above and narrowed, which for these is either
- * exact (ceil/fmod on float operands) or correctly rounded (log/log2 in double
- * carry more than float's 24 bits). */
-float logf(float x);
-float log2f(float x);
+/* The rest of C99's 7.12 that the ports name: min/max (with the standard's NaN
+ * rule — the non-NaN operand wins), the round-to-integer forms (lrint/llrint
+ * round per the current mode, lround/llround half away from zero), and the
+ * remaining elementary functions. */
+double fmax(double x, double y);
+double fmin(double x, double y);
+long lrint(double x);
+long long llrint(double x);
+long lround(double x);
+long long llround(double x);
+double nearbyint(double x);
+double copysign(double x, double y);
+double nextafter(double x, double y);
+double fdim(double x, double y);
+double fma(double x, double y, double z);
+double hypot(double x, double y);
+double cbrt(double x);
+double exp2(double x);
+double expm1(double x);
+double asinh(double x);
+double acosh(double x);
+double atanh(double x);
+double remainder(double x, double y);
+double scalbn(double x, int n);
+
+/* Single-precision entry points — the full `*f` set a ported program names
+ * (Mesa's u_math/u_format use fabsf, fmax, rintf, roundf, powf, lrintf …).
+ * Each is the double version above, narrowed: exact for the integral ones and
+ * correctly rounded for the rest, since double carries more than float's 24
+ * bits. */
+float fabsf(float x);
+float floorf(float x);
 float ceilf(float x);
+float truncf(float x);
+float roundf(float x);
+float rintf(float x);
+float nearbyintf(float x);
 float fmodf(float x, float y);
+float fmaxf(float x, float y);
+float fminf(float x, float y);
+float copysignf(float x, float y);
+float nextafterf(float x, float y);
+float fdimf(float x, float y);
+float fmaf(float x, float y, float z);
+float hypotf(float x, float y);
+float cbrtf(float x);
+float sqrtf(float x);
+float sinf(float x);
+float cosf(float x);
+float tanf(float x);
+float asinf(float x);
+float acosf(float x);
+float atanf(float x);
+float atan2f(float y, float x);
+float expf(float x);
+float exp2f(float x);
+float expm1f(float x);
+float logf(float x);
+float log10f(float x);
+float log2f(float x);
+float log1pf(float x);
+float powf(float x, float y);
+float sinhf(float x);
+float coshf(float x);
+float tanhf(float x);
+float asinhf(float x);
+float acoshf(float x);
+float atanhf(float x);
+float erff(float x);
+long lrintf(float x);
+long long llrintf(float x);
+long lroundf(float x);
+long long llroundf(float x);
 
 #ifdef __cplusplus
 } /* extern "C" */
