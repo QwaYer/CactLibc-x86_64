@@ -52,6 +52,7 @@ libc_c_sources = files(
   'timerfd.c',
   'tls_static.c',
   'tz.c',
+  'uchar.c',
   'unistd.c',
   'wait.c',
   'wlan.c',

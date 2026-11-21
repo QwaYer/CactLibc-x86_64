@@ -5,6 +5,12 @@
 
 #define RAND_MAX 32767
 
+/* C11 7.22.1: the maximum number of bytes in a multibyte character.  One, as
+ * the C locale's character set is single-byte (see <uchar.h>).  An expression,
+ * not a plain integer, so `decltype(MB_CUR_MAX)` is well-formed — libc++ uses
+ * it that way in its locale shim. */
+#define MB_CUR_MAX ((size_t)1)
+
 typedef struct { int quot; int rem; } div_t;
 typedef struct { long quot; long rem; } ldiv_t;
 
@@ -37,6 +43,8 @@ void itoa(int n, char str[]);
 void hex_to_ascii(unsigned int n, char str[]);
 double atof(const char *str);
 double strtod(const char *str, char **endptr);
+float strtof(const char *str, char **endptr);
+long double strtold(const char *str, char **endptr);
 unsigned long strtoul(const char *str, char **endptr, int base);
 long strtol(const char *str, char **endptr, int base);
 long long strtoll(const char *str, char **endptr, int base);

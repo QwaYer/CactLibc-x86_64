@@ -43,4 +43,22 @@ struct lconv {
 char *setlocale(int category, const char *locale);
 struct lconv *localeconv(void);
 
+/* POSIX.1-2008 locale objects.  CactOS has the C locale and nothing else, so
+ * every object refers to the same locale and the category mask is ignored; the
+ * functions exist because a C++ runtime builds its std::locale facets out of
+ * them (libc++: newlocale(LC_ALL_MASK, "C", 0) for the classic locale). */
+typedef struct __cact_locale *locale_t;
+
+#define LC_CTYPE_MASK    (1 << LC_CTYPE)
+#define LC_NUMERIC_MASK  (1 << LC_NUMERIC)
+#define LC_TIME_MASK     (1 << LC_TIME)
+#define LC_COLLATE_MASK  (1 << LC_COLLATE)
+#define LC_MONETARY_MASK (1 << LC_MONETARY)
+#define LC_MESSAGES_MASK (1 << LC_MESSAGES)
+#define LC_ALL_MASK      (LC_CTYPE_MASK | LC_NUMERIC_MASK | LC_TIME_MASK | \
+                          LC_COLLATE_MASK | LC_MONETARY_MASK | LC_MESSAGES_MASK)
+
+locale_t newlocale(int category_mask, const char *locale, locale_t base);
+void freelocale(locale_t loc);
+
 #endif

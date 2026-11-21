@@ -46,3 +46,24 @@ char *setlocale(int category, const char *locale) {
 struct lconv *localeconv(void) {
     return &c_lconv;
 }
+
+/* ── locale objects ─────────────────────────────────────────────────────── */
+
+/* There is one locale, so there is one object, and it is not a heap allocation:
+ * newlocale() either fails (0) or hands back this address, and freelocale() has
+ * nothing to release.  The category mask is ignored for the same reason. */
+static struct __cact_locale { int unused; } c_locale_obj;
+
+locale_t newlocale(int category_mask, const char *locale, locale_t base) {
+    (void)category_mask;
+    (void)base;
+    if (!locale) return 0;                       /* C11: the name is required */
+    if (locale[0] == '\0') return &c_locale_obj; /* "" selects the native locale */
+    for (int i = 0; c_names[i]; i++)
+        if (strcmp(locale, c_names[i]) == 0) return &c_locale_obj;
+    return 0;                                    /* not available */
+}
+
+void freelocale(locale_t loc) {
+    (void)loc;
+}

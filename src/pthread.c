@@ -95,11 +95,36 @@ static cact_thread_t *find_by_id_locked(uint32_t id) {
 
 int pthread_mutex_init(pthread_mutex_t *mutex, const pthread_mutexattr_t *attr) {
     if (!mutex) return EINVAL;
-    (void)attr;
     mutex->state = 0;
-    mutex->type  = PTHREAD_MUTEX_NORMAL;
+    mutex->type  = attr ? (int)attr->__x : PTHREAD_MUTEX_NORMAL;
     mutex->count = 0;
     mutex->owner = 0;
+    return 0;
+}
+
+int pthread_mutexattr_init(pthread_mutexattr_t *attr) {
+    if (!attr) return EINVAL;
+    attr->__x = PTHREAD_MUTEX_DEFAULT;
+    return 0;
+}
+
+int pthread_mutexattr_destroy(pthread_mutexattr_t *attr) {
+    if (!attr) return EINVAL;
+    return 0;
+}
+
+int pthread_mutexattr_settype(pthread_mutexattr_t *attr, int type) {
+    if (!attr) return EINVAL;
+    if (type != PTHREAD_MUTEX_NORMAL && type != PTHREAD_MUTEX_RECURSIVE &&
+        type != PTHREAD_MUTEX_ERRORCHECK)
+        return EINVAL;
+    attr->__x = (uint32_t)type;
+    return 0;
+}
+
+int pthread_mutexattr_gettype(const pthread_mutexattr_t *attr, int *type) {
+    if (!attr || !type) return EINVAL;
+    *type = (int)attr->__x;
     return 0;
 }
 
