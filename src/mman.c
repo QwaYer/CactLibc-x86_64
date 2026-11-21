@@ -1,6 +1,9 @@
 #include "mman.h"
 #include "syscall.h"
 #include <stdint.h>
+#include "nodeio.h"
+#include "ioctl_abi.h"
+#include "fcntl.h"
 
 /* mmap argument structure — must match kernel's mmap_args_t.  The three sizes
  * stay 32-bit: the mmap window (MMAP_BASE..MMAP_LIMIT) and the whole low user
@@ -46,4 +49,19 @@ int msync(void *addr, size_t length, int flags)
     /* RAM-backed anonymous/memfd mappings need no writeback. */
     (void)addr; (void)length; (void)flags;
     return 0;
+}
+
+/* memfd_create(2): the /dev/memfd control node hands back a descriptor on a
+ * fresh anonymous RAM-backed object. */
+int memfd_create(const char *name, unsigned int flags)
+{
+    int fd = nio_open("/dev/memfd", O_RDWR);
+    if (fd < 0) return -1;
+
+    cact_memfd_create_arg_t a;
+    a.name  = (char *)name;   /* optional */
+    a.flags = (uint32_t)flags;
+    int r = nio_map(nio_ioctl(fd, CACT_MEMFDCTL_CREATE, &a));
+    nio_close(fd);
+    return r;
 }

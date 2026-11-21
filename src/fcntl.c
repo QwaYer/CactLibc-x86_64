@@ -46,6 +46,16 @@ int fcntl(int fd, int cmd, ...) {
         a.arg = (uint32_t)arg;
         return nio_map(nio_ioctl(fd, CACT_FDCTL_FCNTL, &a));
     }
+    if (cmd == F_ADD_SEALS || cmd == F_GET_SEALS) {
+        /* memfd sealing.  The ABI command numbers are Linux's F_ADD_SEALS /
+         * F_GET_SEALS, so the POSIX value passes straight through; for
+         * F_ADD_SEALS the argument is the seal bits, for F_GET_SEALS the kernel
+         * returns them. */
+        cact_fcntl_arg_t a;
+        a.cmd = (uint32_t)cmd;
+        a.arg = (uint32_t)arg;
+        return nio_map(nio_ioctl(fd, CACT_FDCTL_FCNTL, &a));
+    }
     errno = EINVAL;
     return -1;
 }

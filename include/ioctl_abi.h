@@ -711,7 +711,22 @@ typedef struct cact_crypt_x509_verify_arg {
 #define CACT_MEMFDCTL_CREATE 0x3801  // arg=cact_memfd_create_arg_t*; returns new fd
 
 // memfd_create(2) flags
-#define CACT_MFD_CLOEXEC 0x0001
+#define CACT_MFD_CLOEXEC       0x0001
+// Sealing is opt-in: a memfd may only be sealed if it was created with this
+// flag (Linux's rule), which is why Wayland passes it.
+#define CACT_MFD_ALLOW_SEALING 0x0002
+
+// Sealing (memfd_create(2) + fcntl(2)): the fcntl commands carry the Linux
+// numbers, which is what <fcntl.h>'s F_ADD_SEALS/F_GET_SEALS pass straight
+// through, and the seals are the F_SEAL_* bits.
+#define CACT_F_ADD_SEALS 1033  // arg = seal bits; needs CACT_MFD_ALLOW_SEALING
+#define CACT_F_GET_SEALS 1034  // returns the object's seal bits
+
+#define CACT_F_SEAL_SEAL         0x0001  // freezes the seal set
+#define CACT_F_SEAL_SHRINK       0x0002  // no more shrinking (ftruncate)
+#define CACT_F_SEAL_GROW         0x0004  // no more growing (ftruncate)
+#define CACT_F_SEAL_WRITE        0x0008  // no more writes
+#define CACT_F_SEAL_FUTURE_WRITE 0x0010  // no new writable mappings
 
 typedef struct cact_memfd_create_arg {
     char     *name;      // optional, NUL-terminated (may be NULL)

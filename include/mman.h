@@ -35,4 +35,13 @@ int   msync(void *addr, size_t length, int flags);
 int   shm_open(const char *name, int oflag, mode_t mode);
 int   shm_unlink(const char *name);
 
+/* memfd_create(2) — an anonymous RAM-backed file (the /dev/memfd node).  The
+ * descriptor behaves like any other file: read/write/ftruncate and a MAP_SHARED
+ * mmap() all work on it.  MFD_ALLOW_SEALING opts into fcntl(F_ADD_SEALS) /
+ * F_GET_SEALS (see <fcntl.h>); both flags carry Linux's values. */
+#define MFD_CLOEXEC       0x0001
+#define MFD_ALLOW_SEALING 0x0002
+
+int   memfd_create(const char *name, unsigned int flags);
+
 #endif
