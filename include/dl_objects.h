@@ -11,7 +11,7 @@
 
 #include <stdint.h>
 
-#define CACT_DL_MAX_OBJECTS 8
+#define CACT_DL_MAX_OBJECTS 32
 /* Program headers kept per object for dl_iterate_phdr (an image's ELF header is
  * not mapped, so the loaders copy the table out as they load it). */
 #define CACT_DL_MAX_PHDRS   16

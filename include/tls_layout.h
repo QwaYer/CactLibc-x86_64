@@ -39,7 +39,7 @@
  * two sides agreeing on the width they each need.
  */
 
-#define CACT_TLS_MAX_MODULES 8
+#define CACT_TLS_MAX_MODULES 32
 /* The TCB: the self pointer the ABI's `%fs:0` read needs, plus one spare word. */
 #define CACT_TLS_TCB_SIZE    (2 * sizeof(void *))
 /* Spare room at the bottom of every thread's block, for the objects that arrive
