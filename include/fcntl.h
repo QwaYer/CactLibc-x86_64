@@ -7,6 +7,8 @@
 extern "C" {
 #endif
 
+#include "unistd.h"   /* off_t, pid_t (struct flock) */
+
 /* Flags for open() */
 #define O_RDONLY    0x0000
 #define O_WRONLY    0x0001
@@ -25,9 +27,29 @@ extern "C" {
 #define F_SETFD         2   /* set file descriptor flags */
 #define F_GETFL         3   /* get file status flags */
 #define F_SETFL         4   /* set file status flags */
+#define F_GETLK         5   /* advisory record lock: query */
+#define F_SETLK         6   /* advisory record lock: set, non-blocking */
+#define F_SETLKW        7   /* advisory record lock: set, blocking */
 #define F_DUPFD_CLOEXEC 1030 /* duplicate file descriptor (>= arg) + FD_CLOEXEC */
 #define F_ADD_SEALS     1033 /* memfd only: add the seal bits below */
 #define F_GET_SEALS     1034 /* memfd only: the object's seal bits */
+
+/* Advisory-lock types (struct flock.l_type).  CactOS backs these with its
+ * process-local flock() table (see src/fcntl.c): locking is whole-file, so the
+ * byte range in struct flock is not honoured, and the lock excludes only this
+ * process. */
+#define F_RDLCK  0
+#define F_WRLCK  1
+#define F_UNLCK  2
+
+/* Linux's struct flock, x86-64 layout. */
+struct flock {
+    short l_type;
+    short l_whence;
+    off_t l_start;
+    off_t l_len;
+    pid_t l_pid;
+};
 
 /* memfd seals (F_ADD_SEALS / F_GET_SEALS).  The kernel enforces them:
  * F_SEAL_SHRINK / F_SEAL_GROW refuse the matching ftruncate, F_SEAL_WRITE

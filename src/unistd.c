@@ -41,6 +41,10 @@ int execve(const char *pathname, char *const argv[], char *const envp[]) {
     return (int)syscall(SYS_EXEC, (uintptr_t)pathname, (uintptr_t)argv, (uintptr_t)envp);
 }
 
+int execv(const char *path, char *const argv[]) {
+    return execve(path, argv, environ);
+}
+
 void _exit(int status) {
     syscall(SYS_EXIT, (uintptr_t)status, 0, 0);
     for (;;) {}
@@ -581,6 +585,18 @@ int uname(struct utsname *buf) {
     for (i = 0; i < 65; i++) buf->release[i]  = u.release[i];
     for (i = 0; i < 65; i++) buf->version[i]  = u.version[i];
     for (i = 0; i < 65; i++) buf->machine[i]  = u.machine[i];
+    return 0;
+}
+
+int gethostname(char *name, size_t len) {
+    struct utsname u;
+    if (uname(&u) != 0) return -1;
+    size_t n = strlen(u.nodename);
+    if (n >= len) n = len ? len - 1 : 0;   /* truncate, as POSIX allows */
+    if (len) {
+        memcpy(name, u.nodename, n);
+        name[n] = '\0';
+    }
     return 0;
 }
 

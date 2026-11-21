@@ -1,4 +1,5 @@
 #include "fcntl.h"
+#include "file.h"      /* flock() and LOCK_* */
 #include "syscall.h"
 #include "nodeio.h"
 #include "errno.h"
@@ -9,9 +10,42 @@ int open(const char *pathname, int flags, ...) {
     return (int)syscall(SYS_OPEN, (uintptr_t)pathname, (uintptr_t)flags, 0);
 }
 
+/* POSIX record locks on top of the process-local flock() table (src/flock.c).
+ * Locking is whole-file — struct flock's range is not honoured — which is what
+ * the callers here (LLVM's file lock/unlock) want. */
+static int fcntl_lock(int fd, int cmd, struct flock *fl) {
+    if (!fl) { errno = EINVAL; return -1; }
+
+    if (cmd == F_GETLK) {
+        /* The table has no query, so answer what an unlocked file would:
+         * no conflicting lock. */
+        fl->l_type = F_UNLCK;
+        return 0;
+    }
+
+    int op;
+    switch (fl->l_type) {
+    case F_RDLCK: op = LOCK_SH; break;
+    case F_WRLCK: op = LOCK_EX; break;
+    case F_UNLCK: op = LOCK_UN; break;
+    default: errno = EINVAL; return -1;
+    }
+    if (cmd == F_SETLK) op |= LOCK_NB;
+    return flock(fd, op);
+}
+
 int fcntl(int fd, int cmd, ...) {
     va_list ap;
     va_start(ap, cmd);
+
+    /* The lock commands pass a pointer, the others an int; read the argument
+     * according to the command. */
+    if (cmd == F_GETLK || cmd == F_SETLK || cmd == F_SETLKW) {
+        struct flock *fl = va_arg(ap, struct flock *);
+        va_end(ap);
+        return fcntl_lock(fd, cmd, fl);
+    }
+
     int arg = va_arg(ap, int);
     va_end(ap);
 

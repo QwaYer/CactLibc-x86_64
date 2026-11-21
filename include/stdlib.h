@@ -21,7 +21,9 @@ typedef struct { int quot; int rem; } div_t;
 typedef struct { long quot; long rem; } ldiv_t;
 typedef struct { long long quot; long long rem; } lldiv_t;
 
-void exit(int status);
+void exit(int status) __attribute__((noreturn));
+/* C99 7.20.4: terminate without running atexit() handlers or flushing. */
+void _Exit(int status) __attribute__((noreturn));
 void *malloc(size_t size);
 void free(void *ptr);
 void *calloc(size_t nmemb, size_t size);
@@ -36,7 +38,10 @@ void *aligned_alloc(size_t alignment, size_t size);
 void *memalign(size_t alignment, size_t size);
 
 int atexit(void (*function)(void));
-void abort(void);
+/* POSIX: abort() never returns.  The attribute matters to a C++ caller that
+ * falls through after calling it (LLVM's report_fatal_error does), which
+ * otherwise warns that a noreturn function can return. */
+void abort(void) __attribute__((noreturn));
 char *getenv(const char *name);
 int system(const char *command);
 int putenv(char *string);
@@ -56,6 +61,16 @@ unsigned long strtoul(const char *str, char **endptr, int base);
 long strtol(const char *str, char **endptr, int base);
 long long strtoll(const char *str, char **endptr, int base);
 unsigned long long strtoull(const char *str, char **endptr, int base);
+
+/* C99 7.20.8 / C89 4.10.7: the multibyte/wide conversion functions live in
+ * <stdlib.h>.  CactOS's C locale is single-byte, so they are defined alongside
+ * the rest of <wchar.h> in src/wchar.c. */
+int mblen(const char *s, size_t n);
+int mbtowc(wchar_t *pwc, const char *s, size_t n);
+int wctomb(char *s, wchar_t wc);
+size_t mbstowcs(wchar_t *dst, const char *src, size_t n);
+size_t wcstombs(char *dst, const wchar_t *src, size_t n);
+
 void qsort(void *base, size_t nmemb, size_t size, int (*compar)(const void *, const void *));
 void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
               int (*compar)(const void *, const void *));

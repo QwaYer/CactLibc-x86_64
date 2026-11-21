@@ -11,7 +11,7 @@ extern "C" {
 
 int strcmp(const char* s1, const char* s2);
 int compare_string(const char* s1, const char* s2);
-int strlen(const char* s);
+size_t strlen(const char* s);
 char* strcat(char* dest, const char* src);
 char* strcpy(char* dest, const char* src);
 char* copy_string(char* dest, const char* src);
@@ -28,8 +28,8 @@ void* memchr(const void* s, int c, size_t n);
 void* memmem(const void* haystack, size_t haystacklen,
              const void* needle, size_t needlelen);
 
-int  strncmp(const char* a, const char* b, unsigned int n);
-void strncpy(char* dst, const char* src, int n);
+int  strncmp(const char* a, const char* b, size_t n);
+char* strncpy(char* dst, const char* src, size_t n);
 char* strncat(char* dest, const char* src, size_t n);
 char* strchr(const char* s, int c);
 char* strrchr(const char* s, int c);
@@ -54,6 +54,9 @@ char* stpcpy(char* dest, const char* src);
 /* XSI strerror_r: fills buf, returns 0 or ERANGE.  (strerror() itself is
  * declared in <stdio.h>.) */
 int strerror_r(int errnum, char* buf, size_t buflen);
+
+/* A short description of a signal number (the XSI strsignal()). */
+char* strsignal(int sig);
 
 int  buf_append(char* buf, int pos, int max, const char* s);
 int  buf_append_int(char* buf, int pos, int max, int n);

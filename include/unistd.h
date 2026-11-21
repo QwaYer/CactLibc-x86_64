@@ -59,6 +59,7 @@ ssize_t write(int fd, const void *buf, size_t count);
 int     close(int fd);
 pid_t   fork(void);
 int     execve(const char *pathname, char *const argv[], char *const envp[]);
+int     execv(const char *path, char *const argv[]);
 pid_t   getpid(void);
 pid_t   gettid(void);
 void    __cact_pid_init(void);
@@ -67,6 +68,9 @@ void    _exit(int status) __attribute__((noreturn));
 pid_t   waitpid(pid_t pid, int *status, int options);
 unsigned int sleep(unsigned int seconds);
 int     usleep(unsigned int usec);
+/* POSIX puts alarm() here (CactLibc's <signal.h> declares it too); it is the
+ * real-time itimer, see src/signal.c. */
+unsigned int alarm(unsigned int seconds);
 
 /* ── groups and sessions ── */
 pid_t   setsid(void);
@@ -112,6 +116,10 @@ int     mknod(const char *pathname, mode_t mode, dev_t dev);
 int     symlink(const char *target, const char *linkpath);
 ssize_t readlink(const char *path, char *buf, size_t bufsiz);
 int     link(const char *oldpath, const char *newpath);
+/* POSIX fchown().  As with fchmod(), CactOS's VFS offers no fd -> path mapping,
+ * so there is no way to name the node a descriptor refers to and this fails
+ * with ENOSYS; see the note in src/stat.c. */
+int     fchown(int fd, uid_t uid, gid_t gid);
 
 /* ── system operations ── */
 int     mount(const char *src, const char *target, const char *fstype,
@@ -137,6 +145,11 @@ struct utsname {
     char machine[65];
 };
 int uname(struct utsname *buf);
+
+/* POSIX gethostname(): CactOS keeps the node name in the UTS nodename
+ * (/proc/uname), so this is uname()'s nodename field.  Truncates (with a NUL)
+ * to `len` rather than failing, as POSIX allows. */
+int gethostname(char *name, size_t len);
 
 /* ── identification ── */
 uid_t   getuid(void);
@@ -169,6 +182,7 @@ int  getpagesize(void);
 #define _SC_NPROCESSORS_CONF 5
 #define _SC_NPROCESSORS_ONLN 6
 #define _SC_VERSION          7
+#define _SC_GETPW_R_SIZE_MAX 8
 long sysconf(int name);
 
 #ifdef __cplusplus

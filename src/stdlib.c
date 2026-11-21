@@ -70,6 +70,12 @@ void exit(int status) {
     while(1);
 }
 
+/* C99 _Exit: terminate at once, without atexit() handlers or a flush. */
+void _Exit(int status) {
+    _exit(status);
+    while(1);
+}
+
 void abort(void) {
     kill(getpid(), SIGABRT);
     _exit(134);

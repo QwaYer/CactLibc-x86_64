@@ -33,6 +33,16 @@ int   munmap(void *addr, size_t length);
 int   mprotect(void *addr, size_t length, int prot);
 int   msync(void *addr, size_t length, int flags);
 
+/* Advisory memory advice (glibc's advice values).  madvise() is a hint by
+ * definition: CactOS's VM has no advice mechanism, so the call is accepted and
+ * has no effect — which POSIX allows.  LLVM's mapped_file_region uses it. */
+#define MADV_NORMAL     0
+#define MADV_RANDOM     1
+#define MADV_SEQUENTIAL 2
+#define MADV_WILLNEED   3
+#define MADV_DONTNEED   4
+int   madvise(void *addr, size_t length, int advice);
+
 /* POSIX shared memory — the /dev/shm name space.  A name is "/" plus one
  * component with no further slash (EINVAL otherwise); the descriptor the call
  * returns is an ordinary file descriptor on a tmpfs object, so ftruncate(),

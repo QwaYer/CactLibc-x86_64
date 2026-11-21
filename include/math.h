@@ -10,7 +10,9 @@ extern "C" {
 /* CactOS: freestanding x87 math (src/math.c).  No libm — the transcendentals
  * are FPU instructions and the integral helpers are bit/counting code. */
 
-#define HUGE_VAL (__builtin_huge_val())
+#define HUGE_VAL  (__builtin_huge_val())
+#define HUGE_VALF (__builtin_huge_valf())
+#define HUGE_VALL (__builtin_huge_vall())
 #define INFINITY (__builtin_inff())
 #define NAN      (__builtin_nanf(""))
 

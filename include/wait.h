@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 #include "unistd.h"
+#include "resource.h"   /* struct rusage (POSIX puts it here too) */
 
 #define WNOHANG   1
 #define WUNTRACED 2
@@ -18,14 +19,6 @@ extern "C" {
 #define WTERMSIG(s)    ((s) & 0x7f)
 #define WIFSTOPPED(s)  (((s) & 0xff) == 0x7f)
 #define WSTOPSIG(s)    (((s) >> 8) & 0xff)
-
-struct rusage {
-    long ru_utime_sec;
-    long ru_utime_usec;
-    long ru_stime_sec;
-    long ru_stime_usec;
-    long ru_maxrss;
-};
 
 pid_t wait(int *status);
 pid_t waitpid(pid_t pid, int *status, int options);

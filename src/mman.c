@@ -65,3 +65,12 @@ int memfd_create(const char *name, unsigned int flags)
     nio_close(fd);
     return r;
 }
+
+/* madvise() is advisory by definition and CactOS's VM has no advice mechanism,
+ * so the hint is accepted and dropped — see <mman.h>. */
+int madvise(void *addr, size_t length, int advice) {
+    (void)addr;
+    (void)length;
+    (void)advice;
+    return 0;
+}

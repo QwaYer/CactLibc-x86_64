@@ -48,6 +48,8 @@ extern "C" {
 #define PIPE_BUF      4096
 #define OPEN_MAX      1024
 #define ARG_MAX       131072
+/* The POSIX minimum for ARG_MAX, which portable code falls back to. */
+#define _POSIX_ARG_MAX 4096
 #define LINE_MAX      2048
 #define SSIZE_MAX     LONG_MAX
 #define NZERO         20

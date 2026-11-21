@@ -80,6 +80,22 @@ typedef void (*sighandler_t)(int);
 #define SIGILL    13
 #define SIGABRT   14
 #define SIGBUS    15
+/* CactOS's kernel has no trap and every kernel signal slot is taken, so SIGTRAP
+ * is a number the libc's sig_number_to_sigindex() (src/signal.c) rejects: a
+ * program can name it — LLVM's crash-recovery handler installs one for each of
+ * its fault signals — and sigaction() answers EINVAL rather than silently
+ * clobbering a real signal.  20 must stay off that map's switch. */
+#define SIGTRAP   20
+
+/* SIGUSR1 and SIGUSR2 name signals CactOS's kernel does not have: LLVM's crash
+ * handler installs one for each status-request signal, so the port needs the
+ * macros to exist.  Like SIGTRAP, the numbers are ones sig_number_to_sigindex()
+ * (src/signal.c) rejects — a program can name them and sigaction() answers
+ * EINVAL instead of clobbering a real signal.  They sit above the kernel's
+ * 13-bit range (KERNEL_NSIG) and are not powers of two, which the map would
+ * read as a mask bit. */
+#define SIGUSR1   21
+#define SIGUSR2   22
 
 /* SA_SIGINFO: sigaction flag for sa_sigaction handler.
  * The kernel builds the siginfo_t and ucontext_t into the signal frame, so the
@@ -91,6 +107,12 @@ typedef void (*sighandler_t)(int);
 /* Run this handler on the alternate signal stack (see sigaltstack below).
  * The value matches CACT_SA_ONSTACK in ioctl_abi.h. */
 #define SA_ONSTACK 0x08000000
+/* POSIX's "reset this signal's disposition to SIG_DFL when the handler is
+ * entered".  CactOS's kernel does not implement it — it acts on SA_ONSTACK,
+ * SA_SIGINFO and SA_NODEFER and stores the rest unread — so the flag is
+ * accepted and does nothing.  LLVM's signal handler does not rely on it: it
+ * unregisters every handler itself on entry. */
+#define SA_RESETHAND 0x80000000
 
 /* FPE signal code constants */
 #define FPE_INTDIV 1

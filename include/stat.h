@@ -69,18 +69,22 @@ struct stat {
     gid_t   st_gid;
     int64_t st_atime;   /* seconds since the Unix epoch */
     int64_t st_mtime;
+    blksize_t st_blksize;   /* preferred I/O size; the VFS's page size */
+    blkcnt_t  st_blocks;    /* 512-byte blocks the file occupies */
 };
 
 int stat(const char *path, struct stat *buf);
 int lstat(const char *path, struct stat *buf);
 int fstat(int fd, struct stat *buf);
 int chmod(const char *path, int mode);
+/* POSIX fchmod().  CactOS's VFS has no fd -> path mapping, so there is no way
+ * to name the node behind a descriptor and this fails with ENOSYS; see the
+ * note in src/stat.c. */
+int fchmod(int fd, mode_t mode);
 int chown(const char *path, int uid, int gid);
 
 #include <ioctl_abi.h>
 
-// Filesystem statistics for the filesystem containing `path`.
-int statfs(const char *path, cact_statfs_t *buf);
 // Rich stat; `flags` may set CACT_AT_SYMLINK_NOFOLLOW.
 int cact_statx(const char *path, cact_statx_t *buf, uint32_t flags);
 

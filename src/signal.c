@@ -336,3 +336,28 @@ int sigqueue(pid_t pid, int sig, const union sigval value) {
     if (r < 0) { errno = -r; return -1; }
     return 0;
 }
+
+/* XSI strsignal(): a short description of a signal, keyed by CactLibc's own
+ * signal numbers (the mask bits, plus the plain ones above). */
+char *strsignal(int sig) {
+    switch (sig) {
+    case SIGKILL:  return "Killed";
+    case SIGTERM:  return "Terminated";
+    case SIGSTOP:  return "Stopped";
+    case SIGCONT:  return "Continued";
+    case SIGPIPE:  return "Broken pipe";
+    case SIGALRM:  return "Alarm clock";
+    case SIGCHLD:  return "Child exited";
+    case SIGFPE:   return "Floating point exception";
+    case SIGSEGV:  return "Segmentation fault";
+    case SIGWINCH: return "Window size changed";
+    case SIGHUP:   return "Hangup";
+    case SIGINT:   return "Interrupt";
+    case SIGQUIT:  return "Quit";
+    case SIGILL:   return "Illegal instruction";
+    case SIGABRT:  return "Aborted";
+    case SIGBUS:   return "Bus error";
+    case SIGTRAP:  return "Trace/breakpoint trap";
+    default:       return "Unknown signal";
+    }
+}

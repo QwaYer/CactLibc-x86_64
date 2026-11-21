@@ -13,6 +13,10 @@ extern "C" {
 
 #define EOF (-1)
 
+/* The buffer size a caller should give setvbuf(), and what a regular file's
+ * st_blksize suggests; 8192 is glibc's value. */
+#define BUFSIZ 8192
+
 typedef struct {
     int fd;
     int flags;

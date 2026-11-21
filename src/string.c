@@ -13,8 +13,8 @@ int strcmp(const char* s1, const char* s2) {
     return compare_string(s1, s2);
 }
 
-int strlen(const char* s) {
-    int len = 0;
+size_t strlen(const char* s) {
+    size_t len = 0;
     while (s[len] != '\0') len++;
     return len;
 }
@@ -122,16 +122,18 @@ int memcmp(const void* s1, const void* s2, unsigned int n) {
     return 0;
 }
 
-int strncmp(const char* a, const char* b, unsigned int n) {
+int strncmp(const char* a, const char* b, size_t n) {
     while (n > 0 && *a && *a == *b) { a++; b++; n--; }
     if (n == 0) return 0;
     return *a - *b;
 }
 
-void strncpy(char* dst, const char* src, int n) {
-    int i = 0;
-    while (src[i] && i < n - 1) { dst[i] = src[i]; i++; }
-    dst[i] = '\0';
+/* POSIX: copy exactly n bytes, NUL-padding the tail, and return dst. */
+char* strncpy(char* dst, const char* src, size_t n) {
+    size_t i = 0;
+    for (; i < n && src[i]; i++) dst[i] = src[i];
+    for (; i < n; i++) dst[i] = '\0';
+    return dst;
 }
 
 int buf_append(char* buf, int pos, int max, const char* s) {

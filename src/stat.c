@@ -1,4 +1,5 @@
 #include "stat.h"
+#include "statfs.h"
 #include "nodeio.h"
 #include "fcntl.h"
 #include "errno.h"
@@ -17,6 +18,11 @@ static void fill_derived(struct stat *buf) {
     buf->st_gid   = 0;
     buf->st_atime = 0;
     buf->st_mtime = 0;
+    /* The VFS does not report a block size, so name the one thing it does use:
+     * the page (4 KiB), which is also what a caller sizing a read buffer wants.
+     * st_blocks follows from the byte length at 512 bytes per block. */
+    buf->st_blksize = 4096;
+    buf->st_blocks  = (blkcnt_t)((buf->st_size + 511) / 512);
 }
 
 int stat(const char *path, struct stat *buf) {
@@ -72,6 +78,31 @@ int chmod(const char *path, int mode) {
     return nio_map(r);
 }
 
+/* POSIX fchmod().  CactOS changes a mode through the file's parent directory
+ * (CACT_DIRCTL_CHMOD) and the VFS offers no fd -> path mapping, so there is no
+ * way to name the node a descriptor refers to.  A fd-level chmod would be a new
+ * kernel ioctl, mirroring the fd-level stat (CACT_FDCTL_FSTAT); until it
+ * exists this fails rather than pretend. */
+int fchmod(int fd, mode_t mode) {
+    (void)fd;
+    (void)mode;
+    errno = ENOSYS;
+    return -1;
+}
+
+/* POSIX fchown(), with the same restriction as fchmod(): ownership is changed
+ * through the parent directory (CACT_DIRCTL_CHOWN) and the VFS has no fd ->
+ * path mapping, so a descriptor cannot name its node.  A fd-level chown would
+ * be a new kernel ioctl, mirroring the fd-level stat (CACT_FDCTL_FSTAT); until
+ * it exists this fails rather than pretend. */
+int fchown(int fd, uid_t uid, gid_t gid) {
+    (void)fd;
+    (void)uid;
+    (void)gid;
+    errno = ENOSYS;
+    return -1;
+}
+
 int chown(const char *path, int uid, int gid) {
     char base[128];
     int  fd = nio_open_parent(path, base, sizeof(base));
@@ -124,22 +155,46 @@ int lstat(const char *path, struct stat *buf) {
     buf->st_gid   = sx.gid;
     buf->st_atime = (int64_t)sx.atime;
     buf->st_mtime = (int64_t)sx.mtime;
+    buf->st_blksize = 4096;
+    buf->st_blocks  = (blkcnt_t)((sx.size + 511) / 512);
     return 0;
 }
 
-/* Resolve the filesystem containing `path` via DIRCTL_STATFS. */
-int statfs(const char *path, cact_statfs_t *buf) {
+/* The kernel reports the small `cact_statfs_t`; a caller gets the POSIX
+ * `struct statfs`.  The VFS does not carry an fsid or mount flags, so those
+ * stay zero, and f_frsize follows f_bsize. */
+static void statfs_from_cact(const cact_statfs_t *c, struct statfs *buf) {
+    buf->f_type    = (long)c->f_type;
+    buf->f_bsize   = (long)c->f_bsize;
+    buf->f_blocks  = (fsblkcnt_t)c->f_blocks;
+    buf->f_bfree   = (fsblkcnt_t)c->f_bfree;
+    buf->f_bavail  = (fsblkcnt_t)c->f_bavail;
+    buf->f_files   = (fsfilcnt_t)c->f_files;
+    buf->f_ffree   = (fsfilcnt_t)c->f_ffree;
+    buf->f_fsid.__val[0] = 0;
+    buf->f_fsid.__val[1] = 0;
+    buf->f_namelen = (long)c->f_namelen;
+    buf->f_frsize  = (long)c->f_bsize;
+    buf->f_flags   = 0;
+    for (int i = 0; i < 4; i++) buf->f_spare[i] = 0;
+}
+
+/* Filesystem statistics for the filesystem containing `path`. */
+int statfs(const char *path, struct statfs *buf) {
     if (!path || !buf) { errno = ENOENT; return -1; }
 
     if (path[0] == '/' && path[1] == '\0') {
         int fd = nio_open("/", O_RDONLY);
         if (fd < 0) return -1;
+        cact_statfs_t c;
         cact_statfs_arg_t a;
         a.name = 0;              /* the directory's own filesystem */
-        a.buf  = buf;
+        a.buf  = &c;
         int r = nio_ioctl(fd, CACT_DIRCTL_STATFS, &a);
         nio_close(fd);
-        return nio_map(r);
+        if (r < 0) return nio_map(r);
+        statfs_from_cact(&c, buf);
+        return 0;
     }
 
     char pbuf[512];
@@ -151,12 +206,28 @@ int statfs(const char *path, cact_statfs_t *buf) {
     char base[128];
     int  fd = nio_open_parent(pbuf, base, sizeof(base));
     if (fd < 0) return -1;
+    cact_statfs_t c;
     cact_statfs_arg_t a;
     a.name = base;
-    a.buf  = buf;
+    a.buf  = &c;
     int r = nio_ioctl(fd, CACT_DIRCTL_STATFS, &a);
     nio_close(fd);
-    return nio_map(r);
+    if (r < 0) return nio_map(r);
+    statfs_from_cact(&c, buf);
+    return 0;
+}
+
+/* The fd form: the directory's own filesystem, the same way statfs("/") asks. */
+int fstatfs(int fd, struct statfs *buf) {
+    if (!buf) { errno = ENOENT; return -1; }
+    cact_statfs_t c;
+    cact_statfs_arg_t a;
+    a.name = 0;
+    a.buf  = &c;
+    int r = nio_ioctl(fd, CACT_DIRCTL_STATFS, &a);
+    if (r < 0) return nio_map(r);
+    statfs_from_cact(&c, buf);
+    return 0;
 }
 
 /* Rich stat (statx).  Follows a final symlink unless CACT_AT_SYMLINK_NOFOLLOW. */

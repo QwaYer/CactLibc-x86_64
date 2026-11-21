@@ -33,6 +33,9 @@ long sysconf(int name) {
     case _SC_CHILD_MAX:        return 1024;
     case _SC_ARG_MAX:          return 131072;
     case _SC_VERSION:          return 200809L;      /* POSIX.1-2008 */
+    /* "No fixed limit", as glibc answers; a caller (LLVM) then falls back to
+     * its own default buffer size for getpw*_r(). */
+    case _SC_GETPW_R_SIZE_MAX: return -1;
     case _SC_NPROCESSORS_CONF:
     case _SC_NPROCESSORS_ONLN: return cpu_count();
     default:
