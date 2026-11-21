@@ -38,6 +38,22 @@ typedef uint32_t sigset_t;
 #define SIGINT   (1u << 11)   /* interrupt — Ctrl-C from TTY       */
 #define SIGQUIT  (1u << 12)   /* quit     — Ctrl-\ from TTY        */
 
+/* The rest of POSIX's fault/job-control set.  Each is still one mask bit, like
+ * every other SIG* here: the kernel's signal tables are indexed by the bit (bit
+ * 0 is SIGKILL, and NSIG/KERNEL_NSIG is the number of slots).  Before
+ * 2026-11-21 these six were POSIX *numbers* (13/14/15/20/21/22), and those
+ * numbers also drive the POSIX-number arm of sig_number_to_sigindex()
+ * (src/signal.c): SIGILL (13) resolved to SIGPIPE's slot, SIGABRT (14) to
+ * SIGALRM's and SIGBUS (15) to SIGTERM's — so abort() raised SIGALRM's slot and
+ * LLVM's crash handler clobbered SIGPIPE/SIGALRM/SIGTERM.  As bits there is no
+ * such collision. */
+#define SIGILL   (1u << 13)
+#define SIGTRAP  (1u << 14)
+#define SIGABRT  (1u << 15)
+#define SIGBUS   (1u << 16)
+#define SIGUSR1  (1u << 17)
+#define SIGUSR2  (1u << 18)
+
 /* ioctl requests for terminal window size */
 #define TIOCGWINSZ 0x5413
 #define TIOCSWINSZ 0x5414
@@ -66,36 +82,6 @@ typedef void (*sighandler_t)(int);
 #define SIG_ERR ((sighandler_t)(uintptr_t)-1)
 
 #define WNOHANG 1
-
-/* Additional POSIX signal numbers (kernel supports bits 0-12 only) */
-#ifndef SIGHUP
-#  define SIGHUP    10
-#endif
-#ifndef SIGINT
-#  define SIGINT    11
-#endif
-#ifndef SIGQUIT
-#  define SIGQUIT   12
-#endif
-#define SIGILL    13
-#define SIGABRT   14
-#define SIGBUS    15
-/* CactOS's kernel has no trap and every kernel signal slot is taken, so SIGTRAP
- * is a number the libc's sig_number_to_sigindex() (src/signal.c) rejects: a
- * program can name it — LLVM's crash-recovery handler installs one for each of
- * its fault signals — and sigaction() answers EINVAL rather than silently
- * clobbering a real signal.  20 must stay off that map's switch. */
-#define SIGTRAP   20
-
-/* SIGUSR1 and SIGUSR2 name signals CactOS's kernel does not have: LLVM's crash
- * handler installs one for each status-request signal, so the port needs the
- * macros to exist.  Like SIGTRAP, the numbers are ones sig_number_to_sigindex()
- * (src/signal.c) rejects — a program can name them and sigaction() answers
- * EINVAL instead of clobbering a real signal.  They sit above the kernel's
- * 13-bit range (KERNEL_NSIG) and are not powers of two, which the map would
- * read as a mask bit. */
-#define SIGUSR1   21
-#define SIGUSR2   22
 
 /* SA_SIGINFO: sigaction flag for sa_sigaction handler.
  * The kernel builds the siginfo_t and ucontext_t into the signal frame, so the
@@ -194,8 +180,10 @@ int sigaddset(sigset_t *set, int signum);
 int sigdelset(sigset_t *set, int signum);
 int sigismember(const sigset_t *set, int signum);
 
-/* Index in the kernel handler table (same mask bit number for delivered signals). */
-#define KERNEL_NSIG 13
+/* Number of kernel signal slots.  A signal's index is its bit number in the
+ * mask (SIGKILL..SIGUSR2 above), and sigset_t is a 32-bit mask, so this stays
+ * <= 32.  It must equal the kernel's NSIG (Cact/kernel/proc/task.h). */
+#define KERNEL_NSIG 19
 
 struct sigaction {
     sighandler_t sa_handler;
