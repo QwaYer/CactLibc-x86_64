@@ -1,6 +1,12 @@
 #ifndef _SYS_UCONTEXT_H
 #define _SYS_UCONTEXT_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define REG_GS       0
 #define REG_FS       1
 #define REG_ES       2
@@ -40,4 +46,7 @@ _Static_assert(sizeof(((ucontext_t *)0)->uc_mcontext.gregs) == 19 * sizeof(unsig
 _Static_assert(sizeof(ucontext_t) == 21 * sizeof(unsigned long),
                "ucontext_t layout drift");
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

@@ -1,6 +1,12 @@
 #ifndef FCNTL_H
 #define FCNTL_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Flags for open() */
 #define O_RDONLY    0x0000
 #define O_WRONLY    0x0001
@@ -39,4 +45,7 @@ int open(const char *pathname, int flags, ...);
 int creat(const char *pathname, int mode);
 int fcntl(int fd, int cmd, ...);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

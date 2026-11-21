@@ -1,6 +1,12 @@
 #ifndef _REGEX_H
 #define _REGEX_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 
 /* POSIX 1003.2 regular expressions: BRE and ERE, leftmost-longest, with
@@ -51,4 +57,7 @@ int    regexec(const regex_t *preg, const char *string, size_t nmatch,
 size_t regerror(int errcode, const regex_t *preg, char *errbuf, size_t errbuf_size);
 void   regfree(regex_t *preg);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

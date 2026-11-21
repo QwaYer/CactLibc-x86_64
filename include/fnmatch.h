@@ -1,6 +1,12 @@
 #ifndef _FNMATCH_H
 #define _FNMATCH_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Flags for fnmatch(). */
 #define FNM_NOMATCH   1
 #define FNM_PATHNAME  0x01     /* wildcards do not match '/' */
@@ -12,4 +18,7 @@
 
 int fnmatch(const char *pattern, const char *string, int flags);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

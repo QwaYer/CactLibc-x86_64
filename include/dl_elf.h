@@ -1,6 +1,12 @@
 #ifndef CACT_DL_ELF_H
 #define CACT_DL_ELF_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* ELF64 shapes and constants shared by the two loaders: ld.so (which maps the
  * program and its DT_NEEDED libraries) and the libc's dlopen() (which maps
  * whatever a program asks for later).  Both work on the same x86_64 images, and
@@ -150,4 +156,7 @@ typedef struct {
 #define STB_WEAK   2
 #define STT_TLS    6
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

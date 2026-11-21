@@ -1,6 +1,12 @@
 #ifndef _MQUEUE_H
 #define _MQUEUE_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 #include "unistd.h"     /* ssize_t, mode_t, size_t */
 #include "time.h"       /* struct timespec */
@@ -88,4 +94,7 @@ int   mq_setattr(mqd_t mqdes, const struct mq_attr *newattr,
  * empty.  Returns -1/EINVAL for SIGEV_THREAD, -1/EBUSY if already registered. */
 int   mq_notify(mqd_t mqdes, const struct sigevent *sevp);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif /* _MQUEUE_H */

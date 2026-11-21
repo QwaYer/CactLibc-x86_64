@@ -1,6 +1,12 @@
 #ifndef _WLAN_H
 #define _WLAN_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include "ioctl_abi.h"
 
@@ -42,4 +48,7 @@ int wl_eapol_tx(int fd, const uint8_t dst[6], const void *eapol, uint32_t len);
  * copied, 0 when none is queued, -1 on error. */
 int wl_eapol_rx(int fd, void *eapol, uint32_t *len, uint8_t src[6]);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif /* _WLAN_H */

@@ -194,11 +194,23 @@ int ungetc(int c, FILE *stream) {
     return c;
 }
 
+int getc(FILE *stream) {
+    return fgetc(stream);
+}
+
+int getchar(void) {
+    return fgetc(stdin);
+}
+
 int fputc(int c, FILE *stream) {
     unsigned char uc = (unsigned char)c;
     ssize_t w = write(stream->fd, &uc, 1);
     if (w != 1) { stream->flags |= F_ERR; return EOF; }
     return c;
+}
+
+int putc(int c, FILE *stream) {
+    return fputc(c, stream);
 }
 
 int fputs(const char *s, FILE *stream) {

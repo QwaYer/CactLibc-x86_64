@@ -1,6 +1,12 @@
 #ifndef _LINK_H
 #define _LINK_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* dl_iterate_phdr(): walk the objects that are mapped into this process.
  *
  * CactOS maps every image at its link-time address and never applies a bias, so
@@ -45,4 +51,7 @@ struct link_map {
     struct link_map *l_next, *l_prev;
 };
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

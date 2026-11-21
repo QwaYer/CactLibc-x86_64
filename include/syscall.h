@@ -1,6 +1,12 @@
 #ifndef _SYSCALL_H
 #define _SYSCALL_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 
 /*
@@ -96,4 +102,7 @@ static inline intptr_t __syscall3(int num, uintptr_t a1, uintptr_t a2, uintptr_t
     { (void)num; (void)a1; (void)a2; (void)a3; return -1; }
 #endif
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

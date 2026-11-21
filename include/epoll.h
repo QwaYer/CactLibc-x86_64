@@ -1,6 +1,12 @@
 #ifndef _SYS_EPOLL_H
 #define _SYS_EPOLL_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 
 /* Linux epoll(7) API as served by CactOS via /dev/epoll + ioctls. */
@@ -46,4 +52,7 @@ int epoll_create1(int flags);
 int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
 int epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout_ms);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif /* _SYS_EPOLL_H */

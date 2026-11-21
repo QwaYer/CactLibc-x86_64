@@ -1,6 +1,12 @@
 #ifndef TERMIOS_H
 #define TERMIOS_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <unistd.h>
 
 #define TCGETS  0x5401
@@ -38,4 +44,7 @@ struct termios {
 int tcgetattr(int fd, struct termios *t);
 int tcsetattr(int fd, int action, const struct termios *t);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

@@ -1,6 +1,12 @@
 #ifndef _STDINT_H
 #define _STDINT_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* C99 7.18 — integer types and their limits.
  *
  * The exact-width types are the ones most code uses; the least/fast families
@@ -123,4 +129,7 @@ typedef unsigned long uintptr_t;
 #define INTMAX_C(c)  c##LL
 #define UINTMAX_C(c) c##ULL
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

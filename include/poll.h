@@ -1,6 +1,12 @@
 #ifndef _POLL_H
 #define _POLL_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <time.h>
 #include "signal.h"
@@ -28,4 +34,7 @@ int poll(struct pollfd *fds, int nfds, int timeout_ms);
 int ppoll(struct pollfd *fds, nfds_t nfds, const struct timespec *timeout_ts,
           const sigset_t *sigmask);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif /* _POLL_H */

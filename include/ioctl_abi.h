@@ -4,6 +4,12 @@
 #ifndef IOCTL_ABI_H
 #define IOCTL_ABI_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // ioctl_abi.h — canonical kernel <-> userspace ABI for the VFS-node service
 // model.
 //
@@ -989,4 +995,7 @@ typedef struct cact_mq_notify_arg {
     uint32_t signo;
 } cact_mq_notify_arg_t;
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

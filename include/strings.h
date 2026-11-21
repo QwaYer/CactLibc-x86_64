@@ -1,6 +1,12 @@
 #ifndef _STRINGS_H
 #define _STRINGS_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 
 /* POSIX <strings.h> — the BSD-derived string helpers.  The case-insensitive
@@ -16,4 +22,7 @@ void  bzero(void *s, size_t n);                      /* memset(s, 0, n) */
 void  bcopy(const void *src, void *dst, size_t n);   /* memmove(dst, src, n) */
 int   bcmp(const void *s1, const void *s2, size_t n); /* memcmp */
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif /* _STRINGS_H */

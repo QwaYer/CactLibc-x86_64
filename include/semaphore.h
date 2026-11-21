@@ -1,6 +1,12 @@
 #ifndef _SEMAPHORE_H
 #define _SEMAPHORE_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "time.h"
 
 /* POSIX unnamed semaphores on the Cact kernel's futex.
@@ -48,4 +54,7 @@ int sem_post(sem_t *sem);
 /* Stores the current value in *sval.  Returns 0. */
 int sem_getvalue(sem_t *sem, int *sval);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif /* _SEMAPHORE_H */

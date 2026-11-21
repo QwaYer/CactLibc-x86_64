@@ -1,6 +1,12 @@
 #ifndef _SELECT_H
 #define _SELECT_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include "time.h"    /* struct timeval */
 #include "syscall.h" /* SYS_SELECT, __syscall1 */
@@ -30,4 +36,7 @@ typedef struct {
 int select(int nfds, fd_set *readfds, fd_set *writefds,
            fd_set *exceptfds, struct timeval *timeout);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif /* _SELECT_H */

@@ -1,6 +1,12 @@
 #ifndef _UCHAR_H
 #define _UCHAR_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>   /* size_t */
 
 /* C11 7.28 <uchar.h>.
@@ -29,4 +35,7 @@ size_t mbrtoc32(char32_t *pc32, const char *s, size_t n, mbstate_t *ps);
 size_t c32rtomb(char *s, char32_t c32, mbstate_t *ps);
 #endif
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif /* _UCHAR_H */

@@ -1,6 +1,12 @@
 #ifndef _SYS_WAIT_H
 #define _SYS_WAIT_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "unistd.h"
 
 #define WNOHANG   1
@@ -26,4 +32,7 @@ pid_t waitpid(pid_t pid, int *status, int options);
 pid_t wait3(int *status, int options, struct rusage *rusage);
 pid_t wait4(pid_t pid, int *status, int options, struct rusage *rusage);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

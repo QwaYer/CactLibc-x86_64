@@ -1,6 +1,12 @@
 #ifndef _SCHED_H
 #define _SCHED_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "unistd.h"          /* pid_t */
 #include "time.h"            /* struct timespec (sched_rr_get_interval) */
 
@@ -38,4 +44,7 @@ int sched_get_priority_min(int policy);
 int sched_rr_get_interval(pid_t pid, struct timespec *interval);
 int sched_yield(void);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

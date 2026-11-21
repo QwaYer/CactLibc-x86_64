@@ -1,6 +1,12 @@
 #ifndef CACT_TLS_LAYOUT_H
 #define CACT_TLS_LAYOUT_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 
 /*
@@ -203,4 +209,7 @@ int  cact_tls_module_add(unsigned long vaddr, uint32_t filesz, uint32_t memsz,
  * its static TLS surplus on dlclose() either. */
 void cact_tls_module_drop(uint32_t off);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

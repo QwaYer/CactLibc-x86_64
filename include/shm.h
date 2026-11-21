@@ -1,6 +1,12 @@
 #ifndef _SHM_H
 #define _SHM_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 
 #define IPC_CREAT    0x0200
@@ -19,4 +25,7 @@ void*    shmat(int shmid, const void* shmaddr, int flags);
 int      shmdt(const void* shmaddr);
 int      shmctl(int shmid, int cmd, void* buf);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

@@ -1,6 +1,12 @@
 #ifndef _ERRNO_H
 #define _ERRNO_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define EPERM  1
 #define ENOENT 2
 #define ESRCH  3
@@ -144,4 +150,7 @@
 int *__errno_location(void);
 #define errno (*__errno_location())
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

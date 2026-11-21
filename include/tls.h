@@ -1,6 +1,12 @@
 #ifndef _CACT_TLS_H
 #define _CACT_TLS_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* CactLibc TLS 1.3 client.
  *
  * The session keys live here, in the calling process: the kernel only supplies
@@ -43,4 +49,7 @@ int cact_tls_set_roots(const void *der, size_t len);
 /* Last error message, for logging.  Never NULL. */
 const char *cact_tls_error(void);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif /* _CACT_TLS_H */

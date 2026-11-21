@@ -1,6 +1,12 @@
 #ifndef _PTHREAD_H
 #define _PTHREAD_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <time.h>
 #include "sched.h"           /* struct sched_param, SCHED_OTHER */
@@ -136,4 +142,7 @@ void __cact_atfork_prepare(void);
 void __cact_atfork_parent(void);
 void __cact_atfork_child(void);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif /* _PTHREAD_H */

@@ -1,6 +1,12 @@
 #ifndef _SYS_LDT_H
 #define _SYS_LDT_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* CactOS keeps no LDT: the kernel programs IA32_FS_BASE for the task directly
  * (see CACT_PROCCTL_SET_TLS).  set_thread_area() installs `base_addr` as the
  * task's `%fs` base, so the function is source-compatible with the Linux i386
@@ -28,4 +34,7 @@ struct user_desc {
 /* Set the calling task's %fs base to u_info->base_addr.  0 clears it. */
 int set_thread_area(struct user_desc *u_info);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

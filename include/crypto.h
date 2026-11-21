@@ -1,6 +1,12 @@
 #ifndef _CACT_CRYPTO_H
 #define _CACT_CRYPTO_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* CactLibc crypto — the C face of the in-kernel crypto service (/dev/crypto).
  *
  * The primitives are the same ones the kernel's rustls provider ships:
@@ -144,4 +150,7 @@ int cact_x509_verify(const void *chain, size_t chain_len,
                      const void *hs_msg, size_t hs_msg_len,
                      const void *hs_sig, size_t hs_sig_len);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif /* _CACT_CRYPTO_H */

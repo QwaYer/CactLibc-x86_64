@@ -1,6 +1,12 @@
 #ifndef STDIO_H
 #define STDIO_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 #include <stdarg.h>
 #include "unistd.h"
@@ -37,8 +43,10 @@ int vsprintf(char *str, const char *format, va_list ap);
 int puts(const char* str);
 char *strerror(int errnum);
 int putchar(int c);
+int getchar(void);
 int fputs(const char *s, FILE *stream);
 int fputc(int c, FILE *stream);
+int putc(int c, FILE *stream);
 int rename(const char *oldpath, const char *newpath);
 
 FILE *fopen(const char *pathname, const char *mode);
@@ -55,6 +63,7 @@ void clearerr(FILE *stream);
 int fflush(FILE *stream);
 char *fgets(char *s, int size, FILE *stream);
 int fgetc(FILE *stream);
+int getc(FILE *stream);
 int ungetc(int c, FILE *stream);
 int remove(const char *pathname);
 void perror(const char *s);
@@ -75,4 +84,7 @@ int vasprintf(char **strp, const char *format, va_list ap);
 int dprintf(int fd, const char *format, ...);
 int vdprintf(int fd, const char *format, va_list ap);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

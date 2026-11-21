@@ -1,6 +1,12 @@
 #ifndef _LIMITS_H
 #define _LIMITS_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Implementation-defined limits for CactOS/x86_64.
  *
  * The integer limits are the LP64 ones (long is 64-bit, int 32-bit); the path
@@ -52,4 +58,7 @@
 #define NGROUPS_MAX   32
 #define NL_ARGMAX     9
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif /* _LIMITS_H */

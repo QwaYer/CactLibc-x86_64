@@ -1,6 +1,12 @@
 #ifndef DIRENT_H
 #define DIRENT_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 
 /* The layout the kernel's CACT_FDCTL_GETDENTS copies — keep it byte-identical
@@ -35,4 +41,7 @@ int scandir(const char *dirp, struct dirent ***namelist,
             int (*compar)(const struct dirent **, const struct dirent **));
 int alphasort(const struct dirent **a, const struct dirent **b);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

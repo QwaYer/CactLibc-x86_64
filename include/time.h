@@ -1,6 +1,12 @@
 #ifndef _TIME_H
 #define _TIME_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 
 typedef long time_t;
@@ -79,4 +85,7 @@ int clock_nanosleep(int clkid, int flags, const struct timespec *req,
 size_t strftime(char *s, size_t max, const char *format, const struct tm *tm);
 char  *strptime(const char *s, const char *format, struct tm *tm);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

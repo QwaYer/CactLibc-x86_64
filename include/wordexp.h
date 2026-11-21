@@ -1,6 +1,12 @@
 #ifndef _WORDEXP_H
 #define _WORDEXP_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 
 /* POSIX wordexp: the shell's expansions (parameter, command, arithmetic,
@@ -29,4 +35,7 @@ typedef struct {
 int  wordexp(const char *words, wordexp_t *pwordexp, int flags);
 void wordfree(wordexp_t *pwordexp);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

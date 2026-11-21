@@ -1,6 +1,12 @@
 #ifndef _SYS_SIGNALFD_H
 #define _SYS_SIGNALFD_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -45,4 +51,7 @@ struct signalfd_siginfo {
 /* fd >= 0: update an existing signalfd's mask. fd == -1: create a new one. */
 int signalfd(int fd, const sigset_t *mask, int flags);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif /* _SYS_SIGNALFD_H */

@@ -1,6 +1,12 @@
 #ifndef _SOCKET_H
 #define _SOCKET_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include "syscall.h"
 #include "uio.h"
@@ -202,4 +208,7 @@ int getsockopt(int fd, int level, int optname,
 /* Hostname or dotted-decimal IPv4 → host byte order IPv4 (blocking; needs DNS server from DHCP/netcfg). */
 int dns_resolve(const char *name, uint32_t *out_ip_host);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif /* _SOCKET_H */

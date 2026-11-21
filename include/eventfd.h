@@ -1,6 +1,12 @@
 #ifndef _SYS_EVENTFD_H
 #define _SYS_EVENTFD_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <fcntl.h>
 
@@ -17,4 +23,7 @@
 
 int eventfd(unsigned int initval, int flags);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif /* _SYS_EVENTFD_H */

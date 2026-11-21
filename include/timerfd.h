@@ -1,6 +1,12 @@
 #ifndef _SYS_TIMERFD_H
 #define _SYS_TIMERFD_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <time.h>
 #include <fcntl.h>
@@ -22,4 +28,7 @@ int timerfd_settime(int fd, int flags,
                     struct itimerspec *old_value);
 int timerfd_gettime(int fd, struct itimerspec *curr_value);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif /* _SYS_TIMERFD_H */

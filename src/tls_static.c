@@ -75,8 +75,12 @@ static void *cact_tls_alloc(void) {
 void __cact_tls_start(void) {
     struct user_desc ud;
     void *block, *tcb;
+    /* ld.so installs the main thread's block before it runs the object
+     * constructors — a constructor may touch a library's `__thread` — and the
+     * program's crt calls this again from _start, so it installs only once. */
+    static int installed;
 
-    if (cact_tls_layout.total == 0) return;      /* no static TLS in this program */
+    if (installed || cact_tls_layout.total == 0) return;
     block = cact_tls_alloc();
     if (!block) return;                          /* no memory: %fs stays unset */
     tcb = cact_tls_fill(block, &cact_tls_layout);
@@ -86,6 +90,7 @@ void __cact_tls_start(void) {
     ud.entry_number = (unsigned)-1;              /* "pick one" — no LDT here */
     ud.base_addr    = (unsigned long)tcb;
     set_thread_area(&ud);
+    installed = 1;
 }
 
 /* A new thread's block, built the same way; the caller keeps it alive.  Returns

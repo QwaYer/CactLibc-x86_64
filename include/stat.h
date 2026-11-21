@@ -1,6 +1,12 @@
 #ifndef _CACT_STAT_H
 #define _CACT_STAT_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 
 #define S_IFMT   0xF000
@@ -68,4 +74,7 @@ int statfs(const char *path, cact_statfs_t *buf);
 // Rich stat; `flags` may set CACT_AT_SYMLINK_NOFOLLOW.
 int cact_statx(const char *path, cact_statx_t *buf, uint32_t flags);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

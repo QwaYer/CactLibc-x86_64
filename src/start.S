@@ -31,4 +31,19 @@ _start:
     call    exit@PLT
     hlt
 
+    /* crtbegin's __dso_handle.  clang emits a hidden reference to it in every
+     * object that has a namespace-scope object with a destructor, to hand
+     * __cxa_atexit() the image that registered the handler; hidden means the
+     * definition has to live in the same image.  A program gets one from here,
+     * a .so carries its own (crtbeginS.o defines it the same way: hidden and
+     * self-referential). */
+    .section .data,"aw",@progbits
+    .hidden __dso_handle
+    .globl  __dso_handle
+    .type   __dso_handle, @object
+    .align  8
+__dso_handle:
+    .quad   __dso_handle
+    .size   __dso_handle, 8
+
 .section .note.GNU-stack,"",@progbits

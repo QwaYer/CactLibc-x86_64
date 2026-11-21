@@ -1,6 +1,12 @@
 #ifndef STRING_H
 #define STRING_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 
 int strcmp(const char* s1, const char* s2);
@@ -52,4 +58,7 @@ int strerror_r(int errnum, char* buf, size_t buflen);
 int  buf_append(char* buf, int pos, int max, const char* s);
 int  buf_append_int(char* buf, int pos, int max, int n);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

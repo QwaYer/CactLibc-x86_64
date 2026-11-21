@@ -1,6 +1,12 @@
 #ifndef CACT_DL_OBJECTS_H
 #define CACT_DL_OBJECTS_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* The table of objects that are already mapped, so dlopen() can reuse them
  * instead of mapping a second copy — in particular clibc.so itself, which every
  * plugin names in its DT_NEEDED.
@@ -72,4 +78,7 @@ typedef struct {
 /* The libc's table; ld.so fills it in before _start runs. */
 extern cact_dl_table_t cact_dl_table;
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

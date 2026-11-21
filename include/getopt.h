@@ -1,6 +1,12 @@
 #ifndef _GETOPT_H
 #define _GETOPT_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* GNU long-option interface.  The short-option getopt() itself is declared in
  * <unistd.h> along with optarg/optind/opterr/optopt. */
 #include "unistd.h"
@@ -30,4 +36,7 @@ int getopt_long(int argc, char *const argv[], const char *optstring,
 int getopt_long_only(int argc, char *const argv[], const char *optstring,
                      const struct option *longopts, int *longindex);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

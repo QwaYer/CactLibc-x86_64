@@ -23,9 +23,49 @@ int atexit(void (*function)(void)) {
     return 0;
 }
 
+/* ── the C++ ABI's static destructors ────────────────────────────────────────
+ *
+ * __cxa_atexit() is the C library's to provide, the way glibc does — libc++abi
+ * has no cxa_atexit.cpp and expects to find it here.  The compiler emits a call
+ * to it for every namespace-scope object whose type has a destructor, handing
+ * over the destructor, the object's address, and the __dso_handle of the image
+ * the object lives in (a .so carries its own, a program gets one from start.S).
+ * The handlers run at exit in reverse order of registration, after the
+ * atexit() ones, which is the order a hosted program observes.  __cxa_finalize
+ * is given a dso to run only that image's handlers at dlclose; CactOS's loader
+ * never unloads an image that registered one, so it always gets NULL and runs
+ * everything. */
+struct __cxa_atexit_rec {
+    void (*fn)(void *);
+    void   *arg;
+};
+
+#define __CXA_ATEXIT_MAX 64
+static struct __cxa_atexit_rec __cxa_atexit_recs[__CXA_ATEXIT_MAX];
+static int __cxa_atexit_count = 0;
+
+int __cxa_atexit(void (*fn)(void *), void *arg, void *dso) {
+    (void)dso;
+    if (!fn || __cxa_atexit_count >= __CXA_ATEXIT_MAX)
+        return -1;
+    __cxa_atexit_recs[__cxa_atexit_count].fn  = fn;
+    __cxa_atexit_recs[__cxa_atexit_count].arg = arg;
+    __cxa_atexit_count++;
+    return 0;
+}
+
+void __cxa_finalize(void *dso) {
+    (void)dso;
+    while (__cxa_atexit_count > 0) {
+        struct __cxa_atexit_rec *r = &__cxa_atexit_recs[--__cxa_atexit_count];
+        r->fn(r->arg);
+    }
+}
+
 void exit(int status) {
     while (_atexit_count > 0)
         _atexit_handlers[--_atexit_count]();
+    __cxa_finalize(0);
     syscall(SYS_EXIT, status, 0, 0);
     while(1);
 }
@@ -63,6 +103,13 @@ div_t div(int numer, int denom) {
 
 ldiv_t ldiv(long numer, long denom) {
     ldiv_t r;
+    r.quot = numer / denom;
+    r.rem  = numer % denom;
+    return r;
+}
+
+lldiv_t lldiv(long long numer, long long denom) {
+    lldiv_t r;
     r.quot = numer / denom;
     r.rem  = numer % denom;
     return r;

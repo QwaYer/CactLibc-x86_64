@@ -1,6 +1,12 @@
 #ifndef STDLIB_H
 #define STDLIB_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 
 #define RAND_MAX 32767
@@ -13,6 +19,7 @@
 
 typedef struct { int quot; int rem; } div_t;
 typedef struct { long quot; long rem; } ldiv_t;
+typedef struct { long long quot; long long rem; } lldiv_t;
 
 void exit(int status);
 void *malloc(size_t size);
@@ -62,10 +69,14 @@ int rand(void);
 void srand(unsigned seed);
 div_t div(int numer, int denom);
 ldiv_t ldiv(long numer, long denom);
+lldiv_t lldiv(long long numer, long long denom);
 
 int mkstemp(char *tmpl);
 int mkostemp(char *tmpl, int flags);
 
 char *realpath(const char *path, char *resolved_path);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

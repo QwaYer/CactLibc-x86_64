@@ -1,6 +1,12 @@
 #ifndef _LOCALE_H
 #define _LOCALE_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* CactOS ships no locale definitions: the C locale is the only one, and
  * setlocale() only ever returns "C".  The structure exists so printf's `'`
  * flag and localeconv() have the real interface to read (see src/locale.c). */
@@ -61,4 +67,7 @@ typedef struct __cact_locale *locale_t;
 locale_t newlocale(int category_mask, const char *locale, locale_t base);
 void freelocale(locale_t loc);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

@@ -1,6 +1,12 @@
 #ifndef _GLOB_H
 #define _GLOB_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 
 typedef struct {
@@ -27,4 +33,7 @@ typedef struct {
 int  glob(const char *pattern, int flags, int (*errfunc)(const char *, int), glob_t *pglob);
 void globfree(glob_t *pglob);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

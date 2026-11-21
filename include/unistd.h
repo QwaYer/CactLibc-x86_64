@@ -1,6 +1,12 @@
 #ifndef UNISTD_H
 #define UNISTD_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 
 typedef int      pid_t;
@@ -154,4 +160,7 @@ int  getpagesize(void);
 #define _SC_VERSION          7
 long sysconf(int name);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

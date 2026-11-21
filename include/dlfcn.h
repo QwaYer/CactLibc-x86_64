@@ -1,6 +1,12 @@
 #ifndef _DLFCN_H
 #define _DLFCN_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define RTLD_LAZY     1
 #define RTLD_NOW      2
 #define RTLD_GLOBAL   0x100
@@ -87,5 +93,8 @@ int dlinfo(void *handle, int request, void *arg);
  * that calls dlmopen(). */
 void *dlmopen(Lmid_t nsid, const char *filename, int flags);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif
 

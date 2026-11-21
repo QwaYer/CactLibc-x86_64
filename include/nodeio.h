@@ -1,6 +1,12 @@
 #ifndef NODEIO_H
 #define NODEIO_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
 #include "unistd.h"
@@ -36,4 +42,7 @@ int nio_open_parent(const char *path, char *base, size_t base_max);
 /* Convert a kernel result to the POSIX convention: -1 + errno. */
 int nio_map(int r);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

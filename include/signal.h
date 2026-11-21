@@ -1,6 +1,12 @@
 #ifndef _SIGNAL_H
 #define _SIGNAL_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include "time.h"
@@ -208,4 +214,7 @@ int sigtimedwait(const sigset_t *set, siginfo_t *info, const struct timespec *ti
  * pending signal). */
 int sigqueue(pid_t pid, int sig, const union sigval value);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif /* _SIGNAL_H */

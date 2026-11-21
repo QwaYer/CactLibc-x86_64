@@ -1,6 +1,12 @@
 #ifndef _SYS_MMAN_H
 #define _SYS_MMAN_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 #include "unistd.h"   /* mode_t for shm_open() */
 
@@ -44,4 +50,7 @@ int   shm_unlink(const char *name);
 
 int   memfd_create(const char *name, unsigned int flags);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif

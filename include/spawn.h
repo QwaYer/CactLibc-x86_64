@@ -1,6 +1,12 @@
 #ifndef _SPAWN_H
 #define _SPAWN_H
 
+/* C linkage for the C++ consumers (libc++, LLVM, Mesa) that include this
+ * header; a mangled reference would match no CactLibc export. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "unistd.h"          /* pid_t, mode_t */
 #include "signal.h"          /* sigset_t */
 #include "sched.h"           /* struct sched_param, SCHED_OTHER */
@@ -79,4 +85,7 @@ int posix_spawnattr_setschedparam(posix_spawnattr_t *attr,
 int posix_spawnattr_getschedpolicy(const posix_spawnattr_t *attr, int *policy);
 int posix_spawnattr_setschedpolicy(posix_spawnattr_t *attr, int policy);
 
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 #endif
