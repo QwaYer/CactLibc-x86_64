@@ -50,6 +50,16 @@ typedef struct {
      * every object is loaded and the block layout is known. */
     Elf64_Rel*  rel;  unsigned long rel_sz,  rel_ent;
     Elf64_Rela* rela; unsigned long rela_sz, rela_ent;
+    /* The objects DT_NEEDED names, as indices into g_objs, and the object's own
+     * constructors (DT_INIT and DT_INIT_ARRAY).  run_object_init() walks the
+     * dependency edges so a library is initialised after its dependencies, the
+     * order a hosted loader gives. */
+    u32           deps[LDSO_MAX_NEEDED];
+    int           ndeps;
+    unsigned long init_fn;
+    unsigned long init_array;
+    unsigned long init_arraysz;
+    unsigned char inited;
 } ldobj_t;
 
 /* Raw syscall shim.  ABI: RAX=num, RDI=a1, RSI=a2, RDX=a3 (SYSCALL). */
@@ -325,6 +335,9 @@ static void process_object(ldobj_t* ob)
         case DT_JMPREL:  jmprel = (Elf64_Rel*)d->d_un.d_ptr;  break;
         case DT_PLTRELSZ: jmprel_sz = d->d_un.d_val;          break;
         case DT_PLTREL:  pltrel = d->d_un.d_val;              break;
+        case DT_INIT:         ob->init_fn = d->d_un.d_ptr;      break;
+        case DT_INIT_ARRAY:   ob->init_array = d->d_un.d_ptr;   break;
+        case DT_INIT_ARRAYSZ: ob->init_arraysz = d->d_un.d_val; break;
         case DT_NEEDED:
             if (nneed < LDSO_MAX_NEEDED) needed[nneed++] = (u32)d->d_un.d_val;
             break;
@@ -342,9 +355,13 @@ static void process_object(ldobj_t* ob)
     /* dependencies (their relocations run first) */
     for (i = 0; i < (unsigned long)nneed; i++) {
         const char* name;
+        ldobj_t* dep;
         if (!strtab || needed[i] >= strsz) continue;
         name = strtab + needed[i];
-        if (!obj_find_by_name(name)) load_library(name);
+        dep = obj_find_by_name(name);
+        if (!dep) { load_library(name); dep = obj_find_by_name(name); }
+        if (dep && ob->ndeps < LDSO_MAX_NEEDED)
+            ob->deps[ob->ndeps++] = (u32)(dep - g_objs);
     }
 
     if (rel && rel_sz && rel_ent) {
@@ -366,6 +383,36 @@ static void process_object(ldobj_t* ob)
             unsigned long n = jmprel_sz / sizeof(Elf64_Rel);
             for (i = 0; i < n; i++)
                 apply_rel(ob, (Elf64_Rel*)((u8*)jmprel + i * sizeof(Elf64_Rel)));
+        }
+    }
+}
+
+/* ── constructors ────────────────────────────────────────────────────── */
+
+/* Run an object's constructors, its dependencies first: DT_INIT, then every
+ * DT_INIT_ARRAY entry in order.  Every image is mapped and relocated by this
+ * point, so a constructor may call into any library it depends on.  A hosted
+ * loader does this for the DT_NEEDED libraries and the executable's own crt
+ * (__libc_csu_init) does it for the program; CactOS has no such crt — start.o
+ * only calls main() — so the loader runs the program's constructors too.
+ *
+ * `inited` doubles as the recursion guard: an ELF dependency graph is acyclic,
+ * but a malformed one must not spin here. */
+static void run_object_init(ldobj_t* ob)
+{
+    int i;
+    if (ob->inited) return;
+    ob->inited = 1;
+    for (i = 0; i < ob->ndeps; i++)
+        run_object_init(&g_objs[ob->deps[i]]);
+    if (ob->init_fn)
+        ((void (*)(void))ob->init_fn)();
+    if (ob->init_array) {
+        unsigned long n = ob->init_arraysz / sizeof(void*);
+        unsigned long j;
+        for (j = 0; j < n; j++) {
+            unsigned long f = ((unsigned long*)ob->init_array)[j];
+            if (f) ((void (*)(void))f)();
         }
     }
 }
@@ -847,6 +894,22 @@ unsigned long ldso_entry(unsigned long* stackp)
 
     /* What dlopen() has to know about the image it is starting inside. */
     dl_publish();
+
+    /* The main thread's thread pointer has to exist before the constructors
+     * run: a constructor may touch a library's `__thread`, and CactOS has no
+     * kernel-set %fs (the program's crt installs it in _start — too late for
+     * this).  __cact_tls_start() is a no-op when the layout is empty and
+     * installs only once, so _start's own call right after is harmless. */
+    {
+        void (*tls_start)(void) =
+            (void (*)(void))resolve_symbol("__cact_tls_start");
+        if (tls_start) tls_start();
+    }
+
+    /* Constructors run last, once every image is mapped and relocated: this is
+     * what starts libc++ (its std::iostream and locale objects) and the
+     * program's own namespace-scope objects, before _start reaches main(). */
+    run_object_init(mainobj);
 
     return av.entry;
 }
