@@ -191,6 +191,13 @@ int sigismember(const sigset_t *set, int signum);
  * <= 32.  It must equal the kernel's NSIG (Cact/kernel/proc/task.h). */
 #define KERNEL_NSIG 19
 
+/* glibc's <signal.h> spells the signal count NSIG; a program that bounds a
+ * signal table by it (Mesa's HUD does) should see the same numbering this libc
+ * uses — the kernel mask bits 0..KERNEL_NSIG-1. */
+#ifndef NSIG
+#define NSIG KERNEL_NSIG
+#endif
+
 struct sigaction {
     sighandler_t sa_handler;
     sigset_t     sa_mask;

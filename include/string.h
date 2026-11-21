@@ -14,7 +14,6 @@ int compare_string(const char* s1, const char* s2);
 size_t strlen(const char* s);
 char* strcat(char* dest, const char* src);
 char* strcpy(char* dest, const char* src);
-char* copy_string(char* dest, const char* src);
 
 void* memory_set(void* dest, int val, int len);
 void* memory_copy(void* dest, const void* src, int len);

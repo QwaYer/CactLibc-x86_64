@@ -6,10 +6,11 @@
 #include "unistd.h"
 #include "ioctl_abi.h"
 
-/* The Linux _IO/_IOR/_IOW/_IOWR request-encoding macros.  The kernel uapi
- * headers a program ports (libsync.h, Mesa's include/drm-uapi/*) spell their
- * request numbers with these, so they have to be present even though CactOS's
- * own ioctls are plain 0x3xxx/0x4xxx bites.  Same bit layout as Linux. */
+/* The _IO/_IOR/_IOW/_IOWR request encoders (Linux's layout).  The kernel's DRM
+ * uapi headers define the same set, so the block is guarded: whichever header a
+ * program reaches first defines them and the other defers.  CactOS's own ioctls
+ * are plain 0x3xxx/0x4xxx numbers and do not use these. */
+#ifndef _IOC
 #define _IOC_NRBITS   8
 #define _IOC_TYPEBITS 8
 #define _IOC_SIZEBITS 14
@@ -32,5 +33,6 @@
 #define _IOR(type, nr, size) _IOC(_IOC_READ, (type), (nr), sizeof(size))
 #define _IOW(type, nr, size) _IOC(_IOC_WRITE, (type), (nr), sizeof(size))
 #define _IOWR(type, nr, size) _IOC(_IOC_READ | _IOC_WRITE, (type), (nr), sizeof(size))
+#endif /* !_IOC */
 
 #endif /* _SYS_IOCTL_H */
