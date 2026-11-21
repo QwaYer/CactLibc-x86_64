@@ -300,6 +300,33 @@ char* strchrnul(const char* s, int c) {
     return (char*)s;
 }
 
+/* The POSIX/BSD <strings.h> set.  The case-insensitive compares live in
+ * <string.h> (declared there too); the rest is spelled out here so that the
+ * header is not a promise the library does not keep. */
+int ffs(int i) {
+    return __builtin_ffs(i);
+}
+
+char* index(const char* s, int c) {
+    return strchr(s, c);
+}
+
+char* rindex(const char* s, int c) {
+    return strrchr(s, c);
+}
+
+void bzero(void* s, size_t n) {
+    memset(s, 0, n);
+}
+
+void bcopy(const void* src, void* dst, size_t n) {
+    memmove(dst, src, n);
+}
+
+int bcmp(const void* s1, const void* s2, size_t n) {
+    return memcmp(s1, s2, n);
+}
+
 char* strcasestr(const char* haystack, const char* needle) {
     if (!*needle) return (char*)haystack;
     for (; *haystack; haystack++) {
