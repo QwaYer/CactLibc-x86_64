@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 #include <stdint.h>
+#include <unistd.h>   /* dev_t, ino_t, nlink_t, uid_t, gid_t, off_t */
 
 #define S_IFMT   0xF000
 #define S_IFREG  0x8000
@@ -45,18 +46,29 @@ extern "C" {
 #define S_IWOTH  00002
 #define S_IXOTH  00001
 
-/* Layout-identical to the kernel's `cact_stat_t` (see ioctl_abi.h): the VFS
- * writes that struct straight into a caller-supplied buffer, 24 bytes of it, so
- * `size` has to be 64-bit here too. */
+/* The first five members are layout-identical to the kernel's `cact_stat_t`
+ * (see ioctl_abi.h): the VFS writes that struct straight into the buffer, 24
+ * bytes of it.  The members after them are the POSIX ones a ported program
+ * reads (LLVM's file layer wants st_dev/st_nlink/st_uid/st_gid and the
+ * timestamps); the VFS's small stat does not carry them, so stat()/fstat() fill
+ * what CactOS can honestly report and lstat() (which goes through the richer
+ * statx) fills the rest.  st_type is a CactOS extension kept for its own
+ * utilities. */
 struct stat {
     uint32_t st_ino;
     uint32_t st_mode;
     uint64_t st_size;
     uint32_t st_type;
     /* 0 unless the node is a device that reports a number; the DRM nodes do
-     * (see the rdev comment in ioctl_abi.h), so it sits in the struct's former
-     * tail padding and the size is still 24. */
+     * (see the rdev comment in ioctl_abi.h). */
     uint32_t st_rdev;
+
+    dev_t   st_dev;
+    nlink_t st_nlink;
+    uid_t   st_uid;
+    gid_t   st_gid;
+    int64_t st_atime;   /* seconds since the Unix epoch */
+    int64_t st_mtime;
 };
 
 int stat(const char *path, struct stat *buf);
@@ -66,8 +78,6 @@ int chmod(const char *path, int mode);
 int chown(const char *path, int uid, int gid);
 
 #include <ioctl_abi.h>
-
-_Static_assert(sizeof(struct stat) == sizeof(cact_stat_t), "struct stat layout drift");
 
 // Filesystem statistics for the filesystem containing `path`.
 int statfs(const char *path, cact_statfs_t *buf);

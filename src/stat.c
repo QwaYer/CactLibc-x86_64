@@ -4,6 +4,21 @@
 #include "errno.h"
 #include <stdint.h>
 
+/* stat()/fstat() go through the kernel's small `cact_stat_t`, which carries only
+ * ino/mode/size/type/rdev (the leading 24 bytes of struct stat).  A ported
+ * program (LLVM) also reads the POSIX members, so fill the ones CactOS can
+ * report honestly: one filesystem (dev 0), a single link, root ownership, and
+ * epoch-zero times.  lstat() goes through the richer statx and fills these for
+ * real. */
+static void fill_derived(struct stat *buf) {
+    buf->st_dev   = 0;
+    buf->st_nlink = 1;
+    buf->st_uid   = 0;
+    buf->st_gid   = 0;
+    buf->st_atime = 0;
+    buf->st_mtime = 0;
+}
+
 int stat(const char *path, struct stat *buf) {
     if (!path) { errno = ENOENT; return -1; }
 
@@ -13,7 +28,9 @@ int stat(const char *path, struct stat *buf) {
         if (fd < 0) return -1;
         int r = nio_ioctl(fd, CACT_FDCTL_FSTAT, buf);
         nio_close(fd);
-        return nio_map(r);
+        if (r < 0) return nio_map(r);
+        fill_derived(buf);
+        return 0;
     }
 
     /* strip trailing '/' (except the root) */
@@ -28,14 +45,19 @@ int stat(const char *path, struct stat *buf) {
     if (fd < 0) return -1;
     cact_statat_arg_t a;
     a.name = base;
-    a.buf  = (cact_stat_t *)buf;   /* layout matches: ino/mode/size/type */
+    a.buf  = (cact_stat_t *)buf;   /* the leading 24 bytes are cact_stat_t */
     int r = nio_ioctl(fd, CACT_DIRCTL_STAT, &a);
     nio_close(fd);
-    return nio_map(r);
+    if (r < 0) return nio_map(r);
+    fill_derived(buf);
+    return 0;
 }
 
 int fstat(int fd, struct stat *buf) {
-    return nio_map(nio_ioctl(fd, CACT_FDCTL_FSTAT, buf));
+    int r = nio_ioctl(fd, CACT_FDCTL_FSTAT, buf);
+    if (r < 0) return nio_map(r);
+    fill_derived(buf);
+    return 0;
 }
 
 int chmod(const char *path, int mode) {
@@ -95,6 +117,13 @@ int lstat(const char *path, struct stat *buf) {
     buf->st_size = sx.size;
     buf->st_type = sx.type;
     buf->st_rdev = sx.rdev;
+    /* The statx path carries the POSIX members the small stat cannot. */
+    buf->st_dev   = 0;
+    buf->st_nlink = sx.nlink;
+    buf->st_uid   = sx.uid;
+    buf->st_gid   = sx.gid;
+    buf->st_atime = (int64_t)sx.atime;
+    buf->st_mtime = (int64_t)sx.mtime;
     return 0;
 }
 

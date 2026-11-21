@@ -29,6 +29,12 @@ extern "C" {
 #define FP_SUBNORMAL 3
 #define FP_NORMAL    4
 
+/* C99 7.12: the values ilogb()/logb() return for zero and NaN.  glibc's x86_64
+ * values (both INT_MIN); llvm-libc's FPUtil reads them directly, so a ported
+ * program (LLVM) needs them present. */
+#define FP_ILOGB0   (-2147483647 - 1)
+#define FP_ILOGBNAN (-2147483647 - 1)
+
 #define fpclassify(x) __builtin_fpclassify(FP_NAN, FP_INFINITE, FP_NORMAL, FP_SUBNORMAL, FP_ZERO, x)
 #define signbit(x)    __builtin_signbit(x)
 #define isnormal(x)   (fpclassify(x) == FP_NORMAL)

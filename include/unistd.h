@@ -20,6 +20,17 @@ typedef unsigned gid_t;
 typedef unsigned mode_t;
 typedef unsigned dev_t;
 
+/* The rest of the POSIX <sys/types.h> set.  A ported program (LLVM, Mesa)
+ * expects <sys/types.h> to provide all of it, so it lives here beside pid_t and
+ * dev_t — <sys/types.h> and <stat.h> forward to this header.  ino_t/nlink_t are
+ * the pointer-width SysV ones, matching st_ino/st_nlink in struct stat. */
+typedef unsigned long ino_t;
+typedef unsigned long nlink_t;
+typedef long          blkcnt_t;
+typedef long          blksize_t;
+typedef unsigned long fsblkcnt_t;
+typedef unsigned long fsfilcnt_t;
+
 #define STDIN_FILENO  0
 #define STDOUT_FILENO 1
 #define STDERR_FILENO 2
