@@ -109,13 +109,17 @@ typedef unsigned long uintptr_t;
 #define PTRDIFF_MAX  9223372036854775807L
 #define SIZE_MAX     UINTPTR_MAX
 
-/* wchar_t and wint_t are 32-bit signed on x86_64, even though CactOS ships no
- * wide-character library yet: the limits belong to the types, and a header that
- * includes <stdint.h> must find them. */
+/* wchar_t and wint_t are 32-bit signed on x86_64.  The limits belong to the
+ * types, so a header that includes <stdint.h> must find them (C99 7.18.3);
+ * <wchar.h> defines the same WCHAR pair, so guard against it. */
+#ifndef WCHAR_MIN
 #define WCHAR_MIN    (-2147483647-1)
 #define WCHAR_MAX    2147483647
+#endif
+#ifndef WINT_MIN
 #define WINT_MIN     (-2147483647-1)
 #define WINT_MAX     2147483647
+#endif
 
 /* 7.18.4 greatest-width integer constants */
 #define INT8_C(c)    c

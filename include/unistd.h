@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 #include <stddef.h>
+#include <stdint.h>
 
 typedef int      pid_t;
 /* ssize_t/off_t are pointer-width on x86_64 (`long`), like the SysV ABI's own
@@ -30,6 +31,13 @@ typedef long          blkcnt_t;
 typedef long          blksize_t;
 typedef unsigned long fsblkcnt_t;
 typedef unsigned long fsfilcnt_t;
+
+/* The raw syscall entry.  glibc declares it in <unistd.h> as well, and a
+ * ported program may call it directly rather than through a wrapper — LLVM's
+ * x86 CPU-level probe (TargetParser/Host.cpp) calls syscall() to try an
+ * out-of-tree syscall and reads the error.  Variadic, same as <syscall.h>,
+ * which declares it too; the low ABI is documented there. */
+intptr_t syscall(int num, ...);
 
 #define STDIN_FILENO  0
 #define STDOUT_FILENO 1

@@ -36,7 +36,10 @@ extern "C" {
 #define STDOUT_FILENO 1
 #define STDERR_FILENO 2
 
-intptr_t syscall(int num, uintptr_t p1, uintptr_t p2, uintptr_t p3);
+/* Variadic, like POSIX's syscall(2): the kernel takes three words, but a C++
+ * caller passes a pointer for one of them and only `...` accepts that without
+ * a cast.  The three words are read from the argument list; see src/syscall.c. */
+intptr_t syscall(int num, ...);
 
 /*
  * Syscall ABI (SYSCALL/IRETQ):

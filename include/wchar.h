@@ -37,8 +37,10 @@ typedef unsigned int wint_t;
 #define WEOF ((wint_t)-1)
 #endif
 
+#ifndef WCHAR_MIN
 #define WCHAR_MIN (-2147483647 - 1)
 #define WCHAR_MAX  2147483647
+#endif
 
 /* ── wide formatted output ──────────────────────────────────────────────────
  * The C locale's `%f`/`%d`/`%s`(byte) output is ASCII, and one wide code unit
