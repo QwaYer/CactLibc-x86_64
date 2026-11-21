@@ -7,6 +7,7 @@
 typedef uint8_t  u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
+typedef uint64_t u64;
 typedef int32_t  s32;
 
 /* The ELF64 structures and the PT_/DT_/R_X86_64_ constants are shared with the
@@ -45,7 +46,6 @@ typedef int32_t  s32;
 #define SO_PATH_MAX     256
 #define LDSO_MAX_OBJS   32
 #define LDSO_MAX_NEEDED 48
-#define LDSO_SCRATCH    0x400000u   /* scratch per load — see the note below */
 
 /* ── image address map ──────────────────────────────────────────────────
  * The user half of the address space is [0x08000000, 0xC0000000) and CactOS
@@ -58,7 +58,6 @@ typedef int32_t  s32;
  *     0x08000000  the main executable
  *     0x10000000  clibc.so                       (libc.ld)
  *     0x18000000  ld.so                          (ldso/ldso.ld)
- *     0x30000000  ld.so file scratch (4 MiB)     (LDSO_SCRATCH_BASE)
  *     0x80000000  the kernel's mmap window       (MMAP_BASE)
  *
  *   library slab — 16 MiB slots, from 0x20000000
@@ -74,18 +73,13 @@ typedef int32_t  s32;
  *     0x29000000  libc++abi.so
  *     0x2A000000 … 0x2F000000  unassigned (Mesa frontends, pixman, libxkbcommon)
  *
- *   large images — explicit size, above the scratch
+ *   large images — explicit size, above the slab
  *     0x40000000  libLLVM.so    (reserved to 0x60000000)
  *     0x60000000  libgallium.so (reserved to 0x70000000)
  *
- * The scratch is mapped MAP_FIXED so its address is a property of ld.so rather
- * than of whatever the kernel's bump allocator hands out; it sits below the mmap
- * window and above every library base, so it can never overlap an image.
- *
- * NOTE: load_library() reads a whole .so through this scratch before mapping it,
- * so nothing larger than LDSO_SCRATCH loads yet.  Every library in the slab above
- * fits; the two large images need the read converted to a forward stream first. */
-#define LDSO_SCRATCH_BASE 0x30000000u
+ * load_library() streams a .so into its mapping (the ELF header page first, then
+ * each PT_LOAD in file order), so an image's size is bounded by its reserved
+ * range and not by any buffer: see ldso.c. */
 
 long ldso_sc(unsigned long num, unsigned long a1, unsigned long a2, unsigned long a3);
 void ldso_die(void);

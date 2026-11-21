@@ -419,21 +419,44 @@ static void run_object_init(ldobj_t* ob)
 
 /* ── file loading helpers ────────────────────────────────────────────── */
 
-static int read_file_full(const char* path, u8* buf, u32 cap)
+/* A forward-only reader over the image file.  ld.so's syscall set is
+ * open/read/close — no lseek and no fstat — so a file has to be consumed front
+ * to back; the linker's segment order makes that possible, and `skip` discards
+ * whatever padding it leaves between segments. */
+typedef struct { int fd; unsigned long pos; } ld_file_t;
+
+static int ld_read_exact(ld_file_t* f, void* dst, unsigned long n)
 {
-    int fd = (int)ldso_sc(SYS_OPEN, (unsigned long)path, 0, 0);
-    u32  off = 0;
-    if (fd < 0) return -1;
-    for (;;) {
-        long n;
-        if (off >= cap) break;
-        n = ldso_sc(SYS_READ, (unsigned long)fd, (unsigned long)(buf + off), cap - off);
-        if (n <= 0) break;
-        off += (u32)n;
+    u8* p = (u8*)dst;
+    while (n) {
+        long r = ldso_sc(SYS_READ, (unsigned long)f->fd, (unsigned long)p, n);
+        if (r <= 0) return -1;                 /* EOF or error */
+        p += r;
+        f->pos += (unsigned long)r;
+        n -= (unsigned long)r;
     }
-    ldso_sc(SYS_CLOSE, (unsigned long)fd, 0, 0);
-    return (off >= cap) ? -2 : (int)off;
+    return 0;
 }
+
+static int ld_skip(ld_file_t* f, unsigned long n)
+{
+    u8 tmp[128];
+    while (n) {
+        unsigned long chunk = n < sizeof tmp ? n : (unsigned long)sizeof tmp;
+        if (ld_read_exact(f, tmp, chunk) != 0) return -1;
+        n -= chunk;
+    }
+    return 0;
+}
+
+/* The first page of the file is read in one go and *kept*: it holds the ELF
+ * header and the program-header table, and for a -pie program (whose first
+ * PT_LOAD starts at file offset 0) it is also the beginning of that segment's
+ * data.  ld puts both tables at the very start of the file and the first
+ * section a page in, so every CactOS image has them here; a file that does not
+ * is refused rather than half-read. */
+#define LDSO_HEAD_BUF 0x1000u
+static u8 g_head[LDSO_HEAD_BUF];
 
 /* The mmap argument block the kernel reads (mmap_args_t): the three sizes are
  * 32-bit because the whole user half — every image's fixed address included —
@@ -464,22 +487,52 @@ static unsigned long map_segment(unsigned long vaddr, unsigned long memsz)
     return (r == (long)-1) ? 0 : start;
 }
 
-/* Map libc/libfoo.so at its fixed link-time addresses; returns 0 on failure. */
+/* Copy one PT_LOAD's file bytes into its mapping (already mapped and zeroed):
+ * the part the header page holds comes from g_head, the rest is streamed.
+ * Segments are visited in file order, so the reader only ever moves forward;
+ * `off < f->pos` means a file whose segments are not in file order, which this
+ * loader cannot take. */
+static int stream_segment(ld_file_t* f, const Elf64_Phdr* ph, unsigned long head_len)
+{
+    unsigned long off = ph->p_offset;
+    unsigned long n   = ph->p_filesz;
+    u8* dst = (u8*)ph->p_vaddr;
+
+    if (off < head_len) {
+        unsigned long k = head_len - off;
+        if (k > n) k = n;
+        ld_memcpy(dst, g_head + off, k);
+        off += k; dst += k; n -= k;
+    }
+    if (!n) return 0;
+    if (off > f->pos) {
+        if (ld_skip(f, off - f->pos) != 0) return -1;
+    } else if (off < f->pos) {
+        return -1;
+    }
+    return ld_read_exact(f, dst, n);
+}
+
+/* Map libc/libfoo.so at its fixed link-time addresses; returns 0 on failure.
+ *
+ * The file is never held whole in memory: the first page is read for the ELF
+ * header and the program-header table, the PT_LOADs are mapped, and each one's
+ * bytes are then streamed straight into its mapping.  That is what lets an
+ * image larger than any fixed buffer load at all — libLLVM.so is 100+ MB. */
 static int load_library(const char* name)
 {
     char path[SO_PATH_MAX];
-    int  len;
-    u8*  buf;
-    u32  cap;
-    int  total;
+    int  len, i;
+    ld_file_t f;
+    unsigned long head_len;
     Elf64_Ehdr* eh;
-    unsigned long phoff, phentsz;
+    unsigned long phoff, phentsz, phbytes;
     u16  phnum;
-    int  i;
     Elf64_Dyn* dyn = 0;
     unsigned long dynsz = 0;
     u32        tls_vaddr = 0, tls_filesz = 0, tls_memsz = 0, tls_align = 4;
     unsigned long span_lo = 0, span_hi = 0;
+    u64        left = 0;                 /* PT_LOADs still to stream */
 
     if (g_nobj >= LDSO_MAX_OBJS) return -1;
 
@@ -488,106 +541,116 @@ static int load_library(const char* name)
     ld_memcpy(path, "/usr/lib/", 9);
     ld_memcpy(path + 9, name, (unsigned long)len + 1);
 
-    cap = LDSO_SCRATCH;
-    {
-        ld_mmap_args_t sargs;
-        sargs.addr = LDSO_SCRATCH_BASE; sargs.length = cap;
-        sargs.prot = PROT_READ | PROT_WRITE;
-        sargs.flags = MAP_PRIVATE | MAP_ANON | MAP_FIXED;
-        sargs.fd = -1; sargs.offset = 0;
-        buf = (u8*)ldso_sc(SYS_MMAP, (unsigned long)&sargs, 0, 0);
-    }
-    if (buf == (u8*)-1) return -1;
+    f.fd  = (int)ldso_sc(SYS_OPEN, (unsigned long)path, 0, 0);
+    f.pos = 0;
+    if (f.fd < 0) return -1;
 
-    total = read_file_full(path, buf, cap);
-    if (total <= 0) {
-        ldso_sc(SYS_MUNMAP, (unsigned long)buf, cap, 0);
-        ld_dbg("[ld.so] cannot read "); ld_dbg(path); ld_dbg("\n");
-        return -1;
+    /* the header page — a page, or the whole file when it is shorter */
+    head_len = 0;
+    while (head_len < LDSO_HEAD_BUF) {
+        long r = ldso_sc(SYS_READ, (unsigned long)f.fd,
+                         (unsigned long)(g_head + head_len),
+                         LDSO_HEAD_BUF - head_len);
+        if (r <= 0) break;
+        head_len += (unsigned long)r;
     }
+    f.pos = head_len;
+    if (head_len < sizeof(Elf64_Ehdr)) goto read_fail;
 
-    eh = (Elf64_Ehdr*)buf;
+    eh = (Elf64_Ehdr*)g_head;
     if (eh->e_ident[0] != ELF_EI_MAGIC0 || eh->e_ident[1] != ELF_EI_MAGIC1 ||
         eh->e_ident[2] != ELF_EI_MAGIC2 || eh->e_ident[3] != ELF_EI_MAGIC3) {
-        ldso_sc(SYS_MUNMAP, (unsigned long)buf, cap, 0);
         ld_dbg("[ld.so] bad magic: "); ld_dbg(path); ld_dbg("\n");
-        return -1;
+        goto fail;
     }
     /* A 32-bit image here would be mapped and then relocated with the wrong
      * rules; every CactOS image is x86_64, so say so instead. */
     if (eh->e_machine != EM_X86_64) {
-        ldso_sc(SYS_MUNMAP, (unsigned long)buf, cap, 0);
         ld_dbg("[ld.so] not an x86_64 image: "); ld_dbg(path); ld_dbg("\n");
-        return -1;
+        goto fail;
     }
     phoff   = eh->e_phoff;
     phnum   = eh->e_phnum;
     phentsz = eh->e_phentsize;
+    phbytes = (unsigned long)phnum * phentsz;
 
-    if (phentsz < sizeof(Elf64_Phdr) || phnum == 0 ||
-        phoff + (unsigned long)phnum * phentsz > (unsigned long)total) {
-        ldso_sc(SYS_MUNMAP, (unsigned long)buf, cap, 0);
-        return -1;
+    /* The program-header table has to lie in the page just read (every CactOS
+     * image has it there), and the bitmask that orders the segments by file
+     * offset needs the count to fit in a word. */
+    if (phentsz < sizeof(Elf64_Phdr) || phnum == 0 || phnum > 64 ||
+        phoff < sizeof(Elf64_Ehdr) || phoff + phbytes > head_len) {
+        ld_dbg("[ld.so] bad ELF header: "); ld_dbg(path); ld_dbg("\n");
+        goto fail;
     }
 
-    /* two passes: map PT_LOAD, remember PT_DYNAMIC */
+    /* map every PT_LOAD, remembering the span and the TLS segment */
     for (i = 0; i < phnum; i++) {
-        Elf64_Phdr* ph = (Elf64_Phdr*)(buf + phoff + (unsigned long)i * phentsz);
-        if (ph->p_type == PT_TLS) {
-            tls_vaddr  = (u32)ph->p_vaddr;
-            tls_filesz = (u32)ph->p_filesz;
-            tls_memsz  = (u32)ph->p_memsz;
-            tls_align  = (u32)ph->p_align;
+        Elf64_Phdr* p = (Elf64_Phdr*)(g_head + phoff + (unsigned long)i * phentsz);
+        if (p->p_type == PT_TLS) {
+            tls_vaddr  = (u32)p->p_vaddr;
+            tls_filesz = (u32)p->p_filesz;
+            tls_memsz  = (u32)p->p_memsz;
+            tls_align  = (u32)p->p_align;
             continue;
         }
-        if (ph->p_type != PT_LOAD || ph->p_memsz == 0) continue;
+        if (p->p_type != PT_LOAD || p->p_memsz == 0) continue;
         {
-            unsigned long lo = ph->p_vaddr & ~0xFFFul;
-            unsigned long hi = (ph->p_vaddr + ph->p_memsz + 0xFFFul) & ~0xFFFul;
+            unsigned long lo = p->p_vaddr & ~0xFFFul;
+            unsigned long hi = (p->p_vaddr + p->p_memsz + 0xFFFul) & ~0xFFFul;
             if (!span_lo || lo < span_lo) span_lo = lo;
             if (hi > span_hi) span_hi = hi;
         }
-        if (!map_segment(ph->p_vaddr, ph->p_memsz)) {
-            ldso_sc(SYS_MUNMAP, (unsigned long)buf, cap, 0);
+        if (!map_segment(p->p_vaddr, p->p_memsz)) {
             ld_dbg("[ld.so] mmap segment failed: "); ld_dbg(path); ld_dbg("\n");
-            return -1;
+            goto fail;
+        }
+        left |= (u64)1 << i;
+    }
+    if (!span_hi) goto fail;                     /* no PT_LOAD at all */
+
+    /* Stream the segments, smallest file offset first: the reader only ever
+     * moves forward. */
+    while (left) {
+        unsigned long best = ~0ul;
+        int at = -1;
+        for (i = 0; i < phnum; i++) {
+            Elf64_Phdr* p = (Elf64_Phdr*)(g_head + phoff + (unsigned long)i * phentsz);
+            if (!(left & ((u64)1 << i)) || p->p_filesz == 0) continue;
+            if (p->p_offset < best) { best = p->p_offset; at = i; }
+        }
+        if (at < 0) break;                       /* only empty segments left */
+        left &= ~((u64)1 << at);
+        if (stream_segment(&f, (Elf64_Phdr*)(g_head + phoff + (unsigned long)at * phentsz),
+                           head_len) != 0) {
+            ld_dbg("[ld.so] cannot read "); ld_dbg(path); ld_dbg("\n");
+            goto fail;
         }
     }
+
     for (i = 0; i < phnum; i++) {
-        Elf64_Phdr* ph = (Elf64_Phdr*)(buf + phoff + (unsigned long)i * phentsz);
-        if (ph->p_type == PT_DYNAMIC) {
-            dyn = (Elf64_Dyn*)ph->p_vaddr;
-            dynsz = ph->p_filesz;
+        Elf64_Phdr* p = (Elf64_Phdr*)(g_head + phoff + (unsigned long)i * phentsz);
+        if (p->p_type == PT_DYNAMIC) {
+            dyn = (Elf64_Dyn*)p->p_vaddr;
+            dynsz = p->p_filesz;
             break;
         }
     }
 
-    /* copy segment file bytes into the fresh zeroed mappings */
-    for (i = 0; i < phnum; i++) {
-        Elf64_Phdr* ph = (Elf64_Phdr*)(buf + phoff + (unsigned long)i * phentsz);
-        unsigned long seg_va;
-        if (ph->p_type != PT_LOAD || ph->p_filesz == 0) continue;
-        if (ph->p_offset + ph->p_filesz > (unsigned long)total) continue;
-        seg_va = ph->p_vaddr & ~0xFFFul;
-        ld_memcpy((void*)(seg_va + (ph->p_vaddr - seg_va)),
-                  buf + ph->p_offset, ph->p_filesz);
-    }
-
-    /* Keep a copy of the program headers while the scratch buffer is still
-     * there: the ELF header of a CactOS image is not mapped (its first PT_LOAD
-     * starts at file offset 0x1000), so dl_iterate_phdr has nothing else to
-     * point a caller at.  The slot is the index this object is about to take. */
-    if (g_nobj < LDSO_MAX_OBJS) {
+    /* Keep a copy of the program headers while the header page is still there:
+     * the ELF header of a CactOS image is not mapped (its first PT_LOAD starts
+     * at file offset 0x1000), so dl_iterate_phdr has nothing else to point a
+     * caller at.  The slot is the index this object is about to take. */
+    {
         u32 n = phnum < DL_MAX_PHDRS ? phnum : DL_MAX_PHDRS;
         u32 slot = (u32)g_nobj;
         for (i = 0; i < (int)n; i++)
             ld_memcpy(&g_phdrs[slot * DL_MAX_PHDRS + i],
-                      buf + phoff + (unsigned long)i * phentsz, sizeof(Elf64_Phdr));
+                      g_head + phoff + (unsigned long)i * phentsz, sizeof(Elf64_Phdr));
     }
 
-    ldso_sc(SYS_MUNMAP, (unsigned long)buf, cap, 0);
+    ldso_sc(SYS_CLOSE, (unsigned long)f.fd, 0, 0);
 
-    if (g_nobj < LDSO_MAX_OBJS) {
+    {
         ldobj_t* ob = &g_objs[g_nobj++];
         ob->name   = name;
         ob->dyn    = (unsigned long)dyn;
@@ -603,8 +666,13 @@ static int load_library(const char* name)
         ob->phdr      = (unsigned long)&g_phdrs[(unsigned long)(g_nobj - 1) * DL_MAX_PHDRS];
         ob->phnum     = phnum < DL_MAX_PHDRS ? phnum : DL_MAX_PHDRS;
         process_object(ob);
-        return 0;
     }
+    return 0;
+
+read_fail:
+    ld_dbg("[ld.so] cannot read "); ld_dbg(path); ld_dbg("\n");
+fail:
+    ldso_sc(SYS_CLOSE, (unsigned long)f.fd, 0, 0);
     return -1;
 }
 
