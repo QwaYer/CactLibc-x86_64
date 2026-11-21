@@ -27,4 +27,18 @@
 #define frexp  cact_frexp
 #define ldexp  cact_ldexp
 
+#define log2   cact_log2
+#define log1p  cact_log1p
+#define logb   cact_logb
+#define rint   cact_rint
+#define sinh   cact_sinh
+#define cosh   cact_cosh
+#define tanh   cact_tanh
+#define erf    cact_erf
+
+#define logf   cact_logf
+#define log2f  cact_log2f
+#define ceilf  cact_ceilf
+#define fmodf  cact_fmodf
+
 #endif

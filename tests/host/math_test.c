@@ -23,6 +23,11 @@ double cact_fmod(double, double);
 double cact_modf(double, double *);
 double cact_frexp(double, int *);
 double cact_ldexp(double, int);
+double cact_log2(double);  double cact_log1p(double); double cact_logb(double);
+double cact_rint(double);  double cact_sinh(double);  double cact_cosh(double);
+double cact_tanh(double);  double cact_erf(double);
+float  cact_logf(float);   float  cact_log2f(float);
+float  cact_ceilf(float);  float  cact_fmodf(float, float);
 int   *cact_host_errno_ptr(void);
 
 static int checks, fails;
@@ -135,6 +140,43 @@ int main(void) {
     }
     ckx("asin(2)", cact_asin(2.0), NAN);
     ckx("acos(2)", cact_acos(2.0), NAN);
+
+    /* The rest of the POSIX set the ports name.  logb and rint are exact
+     * (bit-identical, including rint's ties-to-even); the transcendentals carry
+     * the FPU's own last bits or the series/continued-fraction tolerance. */
+    for (int i = 0; i < NV; i++) {
+        double x = V[i];
+        ckx("rint",  cact_rint(x),  rint(x));
+        ckx("logb",  cact_logb(x),  logb(x));
+        ckr("log2",  cact_log2(x),  log2(x),  1e-14);
+        ckr("log1p", cact_log1p(x), log1p(x), 1e-14);
+        ckr("sinh",  cact_sinh(x),  sinh(x),  1e-13);
+        ckr("cosh",  cact_cosh(x),  cosh(x),  1e-13);
+        ckr("tanh",  cact_tanh(x),  tanh(x),  1e-13);
+        ckr("erf",   cact_erf(x),   erf(x),   1e-12);
+    }
+    /* rint ties to even (the default rounding mode) */
+    ckx("rint(0.5)",  cact_rint(0.5),  rint(0.5));
+    ckx("rint(2.5)",  cact_rint(2.5),  rint(2.5));
+    ckx("rint(-2.5)", cact_rint(-2.5), rint(-2.5));
+    ckx("log1p(-1)",  cact_log1p(-1.0), -INFINITY);
+    ckx("log1p(-2)",  cact_log1p(-2.0), NAN);
+    ckx("logb(0)",    cact_logb(0.0),  -INFINITY);
+    ckx("erf(inf)",   cact_erf(INFINITY), 1.0);
+    ckx("erf(-inf)",  cact_erf(-INFINITY), -1.0);
+
+    /* single precision */
+    {
+        volatile float F[] = { 0.0f, 1.0f, -1.0f, 2.5f, -2.5f, 0.1f, 3.5f,
+                               12345.5f, 1e30f, 1e-20f };
+        for (unsigned i = 0; i < sizeof F / sizeof F[0]; i++) {
+            float f = F[i];
+            ckr("logf",  cact_logf(f),  logf(f),  1e-6);
+            ckr("log2f", cact_log2f(f), log2f(f), 1e-6);
+            ckx("ceilf", cact_ceilf(f), ceilf(f));
+            ckx("fmodf", cact_fmodf(f, 0.7f), fmodf(f, 0.7f));
+        }
+    }
 
     /* ldexp: exact, including subnormal, overflow and saturation */
     {

@@ -74,6 +74,29 @@ double modf(double x, double *iptr);
 double frexp(double x, int *exp);
 double ldexp(double x, int exp);
 
+/* The rest of POSIX 7.12 the ports name.  log2 and log1p are x87 instructions
+ * (fyl2x / fyl2xp1); logb and rint are exponent/rounding structure; sinh/cosh/
+ * tanh go through an accurate exp(x)-1; erf uses a Taylor series for small |x|
+ * and the erfc continued fraction beyond. */
+double log2(double x);
+double log1p(double x);
+double logb(double x);
+double rint(double x);
+double sinh(double x);
+double cosh(double x);
+double tanh(double x);
+double erf(double x);
+
+/* Single-precision entry points a ported program names.  Only the ones the
+ * ports have needed so far are here — there is no full `*f` set — and each is
+ * computed by the double version above and narrowed, which for these is either
+ * exact (ceil/fmod on float operands) or correctly rounded (log/log2 in double
+ * carry more than float's 24 bits). */
+float logf(float x);
+float log2f(float x);
+float ceilf(float x);
+float fmodf(float x, float y);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

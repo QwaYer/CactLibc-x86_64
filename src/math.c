@@ -446,3 +446,128 @@ double pow(double x, double y) {
                       : "=m"(r) : "m"(y), "m"(x) : "st");
     return neg ? -r : r;
 }
+
+/* ── the rest of POSIX 7.12 the ports need ──────────────────────────────── */
+
+/* ln(1+x), accurate for small x: fyl2xp1 computes ST(1)*log2(ST(0)+1) without
+ * the 1+x rounding that a plain log(1+x) would suffer. */
+double log1p(double x) {
+    double r;
+    if (x != x || x < -1.0) return CACT_NAN;
+    if (x == -1.0) return -CACT_INF;
+    __asm__ volatile ("fldln2\n\tfldl %1\n\tfyl2xp1\n\tfstpl %0"
+                      : "=m"(r) : "m"(x) : "st");
+    return r;
+}
+
+/* log2(x): the FPU's own base — fyl2x with ST(1)=1. */
+double log2(double x) {
+    double r;
+    if (x != x || x < 0.0) return CACT_NAN;
+    if (x == 0.0) return -CACT_INF;
+    __asm__ volatile ("fld1\n\tfldl %1\n\tfyl2x\n\tfstpl %0"
+                      : "=m"(r) : "m"(x) : "st");
+    return r;
+}
+
+/* logb(x): the exponent as a floating value, floor(log2|x|). */
+double logb(double x) {
+    int e;
+    if (x != x) return CACT_NAN;
+    if (x > 1.7976931348623157e308 || x < -1.7976931348623157e308) return CACT_INF;
+    if (x == 0.0) return -CACT_INF;
+    frexp(fabs(x), &e);
+    return (double)(e - 1);
+}
+
+/* rint(x): round to an integer in the FPU's current rounding mode (nearest,
+ * ties to even, by default) — the frndint instruction, exactly. */
+double rint(double x) {
+    double r;
+    if (x != x) return x;
+    __asm__ volatile ("fldl %1\n\tfrndint\n\tfstpl %0" : "=m"(r) : "m"(x) : "st");
+    return r;
+}
+
+/* exp(x)-1 without the small-x cancellation.  For |x*log2(e)| <= 0.5 the FPU's
+ * f2xm1 gives 2^y - 1 accurately (that is its purpose); beyond that exp(x)-1
+ * has no cancellation (exp(x) >= 1.41), so the subtraction is safe. */
+#define CACT_LOG2E 1.4426950408889634073599246810019
+static double _expm1(double x) {
+    double y, r;
+    if (x != x) return x;
+    y = x * CACT_LOG2E;
+    if (y > 0.5 || y < -0.5) return exp(x) - 1.0;
+    __asm__ volatile ("fldl %1\n\tf2xm1\n\tfstpl %0" : "=m"(r) : "m"(y) : "st");
+    return r;
+}
+
+double sinh(double x) {
+    double a, r;
+    if (x != x) return x;
+    a = fabs(x);
+    if (a > 710.0) return (x < 0.0) ? -CACT_INF : CACT_INF;
+    r = 0.5 * (_expm1(a) - _expm1(-a));            /* (e^a - e^-a)/2 */
+    return (x < 0.0) ? -r : r;
+}
+
+double cosh(double x) {
+    double a;
+    if (x != x) return x;
+    a = fabs(x);
+    if (a > 710.0) return CACT_INF;
+    return 1.0 + 0.5 * (_expm1(a) + _expm1(-a));   /* (e^a + e^-a)/2 */
+}
+
+double tanh(double x) {
+    double a, r;
+    if (x != x) return x;
+    a = fabs(x);
+    if (a >= 20.0) return (x < 0.0) ? -1.0 : 1.0;  /* |tanh| = 1 to double here */
+    r = _expm1(2.0 * a);
+    r = r / (r + 2.0);                             /* (e^2a - 1)/(e^2a + 1) */
+    return (x < 0.0) ? -r : r;
+}
+
+/* erfc(x) for x >= 2 via the standard continued fraction
+ *   erfc(x) = exp(-x^2)/(x*sqrt(pi)) / (1 + 1/(2x^2)/(1 + 2/(2x^2)/(1 + ...)))
+ * evaluated backwards from the 40th term; it converges quickly for x >= 2. */
+#define CACT_1_SQRTPI 0.56418958354775628694807945156077   /* 1/sqrt(pi) */
+static double _erfc_big(double x) {
+    double v = 1.0 / (2.0 * x * x), t = 0.0;
+    int n;
+    for (n = 40; n >= 1; n--) t = (n * v) / (1.0 + t);
+    return exp(-x * x) * CACT_1_SQRTPI / x / (1.0 + t);
+}
+
+#define CACT_2_SQRTPI 1.1283791670955125738961589031215    /* 2/sqrt(pi) */
+double erf(double x) {
+    double a, sum, term, x2;
+    int n;
+    if (x != x) return x;
+    a = fabs(x);
+    if (a > 1.7976931348623157e308) return (x < 0.0) ? -1.0 : 1.0;   /* +-inf */
+    if (a >= 2.0) {                                  /* 1 - erfc */
+        double e = 1.0 - _erfc_big(a);
+        return (x < 0.0) ? -e : e;
+    }
+    /* erf(x) = (2/sqrt(pi)) * sum (-1)^n x^(2n+1)/(n!(2n+1)),  |x| < 2 */
+    x2 = x * x;
+    term = x;
+    sum = x;
+    for (n = 1; n <= 60; n++) {
+        double add;
+        term *= -x2 / (double)n;
+        add = term / (double)(2 * n + 1);
+        sum += add;
+        if (fabs(add) < 1e-20 * fabs(sum)) break;
+    }
+    return sum * CACT_2_SQRTPI;
+}
+
+/* ── single-precision entry points (see <math.h>) ───────────────────────── */
+
+float logf(float x)           { return (float)log((double)x); }
+float log2f(float x)          { return (float)log2((double)x); }
+float ceilf(float x)          { return (float)ceil((double)x); }
+float fmodf(float x, float y) { return (float)fmod((double)x, (double)y); }

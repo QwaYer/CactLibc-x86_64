@@ -58,6 +58,7 @@ libc_c_sources = files(
   'tz.c',
   'uchar.c',
   'unistd.c',
+  'unwind.c',
   'wait.c',
   'wchar.c',
   'wctype.c',
