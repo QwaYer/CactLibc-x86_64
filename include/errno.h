@@ -96,6 +96,8 @@
 #define EPROTONOSUPPORT 93
 #define ESOCKTNOSUPPORT 94
 #define EOPNOTSUPP 95
+/* ENOTSUP is the same error as EOPNOTSUPP on Linux. */
+#define ENOTSUP    95
 #define EPFNOSUPPORT 96
 #define EAFNOSUPPORT 97
 #define EADDRINUSE 98

@@ -53,6 +53,13 @@ typedef struct cact_stat {
     uint32_t mode;   // POSIX-ish mode (type bits | rwxrwxrwx)
     uint64_t size;   // 64-bit byte length
     uint32_t type;   // VFS node type (file/dir/chardev/...)
+    // st_rdev: the device number of a device node, glibc-encoded.  CactOS has
+    // no device-number namespace, so only the DRM nodes carry one — the Linux
+    // DRM major (226) plus the minor the DRM core already numbers (0..127
+    // card, 128+ render) — because the userspace DRM stack (libdrm) identifies
+    // a node by exactly this.  Everything else reports 0.  The field sits in
+    // what used to be tail padding: the struct is still 24 bytes.
+    uint32_t rdev;
 } cact_stat_t;
 
 // Rich stat: the POSIX metadata the small stat struct cannot carry.  Timestamps
@@ -71,6 +78,7 @@ typedef struct cact_statx {
     uint64_t mtime;
     uint64_t ctime;
     uint32_t type;     // VFS node type
+    uint32_t rdev;     // device number, as in cact_stat_t (0 unless a device node)
 } cact_statx_t;
 
 // Layout is mirrored in Rust (`CactStat`/`CactStatx` in rust_vfs/src/abi.rs);

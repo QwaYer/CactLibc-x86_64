@@ -94,6 +94,7 @@ int lstat(const char *path, struct stat *buf) {
     buf->st_mode = sx.mode;
     buf->st_size = sx.size;
     buf->st_type = sx.type;
+    buf->st_rdev = sx.rdev;
     return 0;
 }
 

@@ -47,6 +47,10 @@ struct stat {
     uint32_t st_mode;
     uint64_t st_size;
     uint32_t st_type;
+    /* 0 unless the node is a device that reports a number; the DRM nodes do
+     * (see the rdev comment in ioctl_abi.h), so it sits in the struct's former
+     * tail padding and the size is still 24. */
+    uint32_t st_rdev;
 };
 
 int stat(const char *path, struct stat *buf);
