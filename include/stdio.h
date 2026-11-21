@@ -17,6 +17,11 @@ extern "C" {
  * st_blksize suggests; 8192 is glibc's value. */
 #define BUFSIZ 8192
 
+/* setvbuf() modes. */
+#define _IOFBF 0
+#define _IOLBF 1
+#define _IONBF 2
+
 typedef struct {
     int fd;
     int flags;
@@ -44,6 +49,7 @@ int snprintf(char *str, size_t size, const char *format, ...);
 int vfprintf(FILE *stream, const char *format, va_list ap);
 int vsnprintf(char *str, size_t size, const char *format, va_list ap);
 int vsprintf(char *str, const char *format, va_list ap);
+int vprintf(const char *format, va_list ap);
 int puts(const char* str);
 char *strerror(int errnum);
 int putchar(int c);
@@ -66,6 +72,9 @@ int feof(FILE *stream);
 int ferror(FILE *stream);
 void clearerr(FILE *stream);
 int fflush(FILE *stream);
+/* Buffering is a caller preference here: CactLibc's stdio writes straight to the
+ * descriptor, so the mode is accepted and remembered but changes nothing. */
+int setvbuf(FILE *stream, char *buf, int mode, size_t size);
 char *fgets(char *s, int size, FILE *stream);
 int fgetc(FILE *stream);
 int getc(FILE *stream);

@@ -186,6 +186,42 @@ int pthread_mutex_lock(pthread_mutex_t *mutex) {
     return r;
 }
 
+int pthread_mutex_timedlock(pthread_mutex_t *mutex, const struct timespec *abstime) {
+    if (!mutex || !abstime) return EINVAL;
+
+    if (mutex->type == PTHREAD_MUTEX_RECURSIVE) {
+        uint32_t me = self_tid();
+        if (mutex->owner == (int)me) { mutex->count++; return 0; }
+    }
+
+    for (;;) {
+        int c = __atomic_load_n((int *)&mutex->state, __ATOMIC_RELAXED);
+        if (c == 0 &&
+            __atomic_compare_exchange_n((int *)&mutex->state, &c, 1, 0,
+                                        __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+            if (mutex->type == PTHREAD_MUTEX_RECURSIVE) {
+                mutex->owner = (int)self_tid();
+                mutex->count = 1;
+            }
+            return 0;
+        }
+
+        struct timespec now;
+        clock_gettime(CLOCK_REALTIME, &now);
+        long ms = (abstime->tv_sec - now.tv_sec) * 1000L +
+                  (abstime->tv_nsec - now.tv_nsec) / 1000000L;
+        if (ms <= 0) return ETIMEDOUT;
+
+        /* Leave the word in the "locked with waiters" state so unlock() wakes
+         * us, then wait with the remaining time. */
+        int expected = 1;
+        __atomic_compare_exchange_n((int *)&mutex->state, &expected, 2, 0,
+                                    __ATOMIC_RELAXED, __ATOMIC_RELAXED);
+        if (cact_futex_wait(&mutex->state, 2, (int)ms) == -ETIMEDOUT)
+            return ETIMEDOUT;
+    }
+}
+
 int pthread_mutex_trylock(pthread_mutex_t *mutex) {
     if (!mutex) return EINVAL;
 

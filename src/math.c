@@ -646,6 +646,14 @@ float roundf(float x)      { return (float)round((double)x); }
 float rintf(float x)       { return (float)rint((double)x); }
 float nearbyintf(float x)  { return (float)nearbyint((double)x); }
 float fmodf(float x, float y) { return (float)fmod((double)x, (double)y); }
+float frexpf(float x, int *exp) { return (float)frexp((double)x, exp); }
+float ldexpf(float x, int exp)  { return (float)ldexp((double)x, exp); }
+float modff(float x, float *iptr) {
+    double ip;
+    float fp = (float)modf((double)x, &ip);
+    if (iptr) *iptr = (float)ip;
+    return fp;
+}
 float fmaxf(float x, float y) { return (float)fmax((double)x, (double)y); }
 float fminf(float x, float y) { return (float)fmin((double)x, (double)y); }
 float copysignf(float x, float y)  { return (float)copysign((double)x, (double)y); }

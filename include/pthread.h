@@ -122,6 +122,7 @@ int pthread_mutex_destroy(pthread_mutex_t *mutex);
 int pthread_mutex_lock(pthread_mutex_t *mutex);
 int pthread_mutex_trylock(pthread_mutex_t *mutex);
 int pthread_mutex_unlock(pthread_mutex_t *mutex);
+int pthread_mutex_timedlock(pthread_mutex_t *mutex, const struct timespec *abstime);
 
 /* The attribute object carries one thing — the mutex type — in its single
  * word, and pthread_mutex_init() reads it (a NULL attr means

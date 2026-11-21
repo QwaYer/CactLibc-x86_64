@@ -47,6 +47,12 @@ char *getenv(const char *name);
  * NULL.  CactOS has no setuid/setcap and no AT_SECURE, so nothing is ever
  * privileged and this is getenv(). */
 char *secure_getenv(const char *name);
+
+/* glibc's <stdlib.h> exposes alloca() under _GNU_SOURCE (which the ported
+ * programs define); the builtin needs no library support. */
+#if defined(_GNU_SOURCE) && !defined(_ALLOCA_H)
+#define alloca(size) __builtin_alloca(size)
+#endif
 int system(const char *command);
 int putenv(char *string);
 int setenv(const char *name, const char *value, int overwrite);

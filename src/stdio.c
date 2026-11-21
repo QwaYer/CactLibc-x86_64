@@ -156,6 +156,20 @@ int fflush(FILE *stream) {
     return 0;
 }
 
+int setvbuf(FILE *stream, char *buf, int mode, size_t size) {
+    /* stdio here writes straight to the descriptor: the buffering mode is a
+     * caller preference that changes nothing (see <stdio.h>). */
+    (void)stream;
+    (void)buf;
+    (void)mode;
+    (void)size;
+    return 0;
+}
+
+int vprintf(const char *format, va_list ap) {
+    return vfprintf(stdout, format, ap);
+}
+
 char *fgets(char *s, int size, FILE *stream) {
     int i = 0;
     while (i < size - 1) {
