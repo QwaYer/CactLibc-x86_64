@@ -25,6 +25,10 @@ extern "C" {
 /* ── Socket types ─────────────────────────────────────────────────────────── */
 #define SOCK_STREAM  1
 #define SOCK_DGRAM   2
+/* Raw IP socket.  The kernel currently exposes only ICMPv6 over IPv6
+ * (SOCK_RAW + AF_INET6 + IPPROTO_ICMPV6), for a userspace SLAAC/NDP client; the
+ * buffer exchanged is the ICMPv6 message itself. */
+#define SOCK_RAW     3
 
 /* Accepted in the type argument of socket/socketpair/accept4 */
 #define SOCK_CLOEXEC   0x80000   /* same bit as O_CLOEXEC */
@@ -35,6 +39,7 @@ typedef uint32_t socklen_t;
 /* ── Protocol numbers ─────────────────────────────────────────────────────── */
 #define IPPROTO_TCP   6
 #define IPPROTO_UDP  17
+#define IPPROTO_ICMPV6 58
 
 /* ── INADDR_ANY ───────────────────────────────────────────────────────────── */
 #define INADDR_ANY  0
