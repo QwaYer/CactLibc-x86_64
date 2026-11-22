@@ -44,6 +44,21 @@ int wl_disconnect(int fd) {
     return nio_map(ioctl(fd, CACT_WLANCTL_DISCONNECT, 0));
 }
 
+int wl_set_wds(int fd, int on) {
+    uint32_t v = on ? 1u : 0u;
+
+    /* The ioctl also writes the previous value back into v; not used here. */
+    return nio_map(ioctl(fd, CACT_WLANCTL_SET_WDS, &v));
+}
+
+int wl_get_wds(int fd) {
+    uint32_t v = 0;
+
+    if (nio_map(ioctl(fd, CACT_WLANCTL_GET_WDS, &v)) != 0)
+        return -1;
+    return (int)v;
+}
+
 int wl_set_key(int fd, uint32_t kind, uint32_t key_id, const void *key,
                uint32_t key_len) {
     cact_wlan_key_t k;

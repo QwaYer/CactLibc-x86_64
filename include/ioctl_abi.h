@@ -861,15 +861,23 @@ typedef struct cact_vt_state {
 // wljoin utility) is the WPA2 supplicant: it reads the BSS list, asks the
 // kernel to join a BSS, runs the 4-way handshake over EAPOL, and installs the
 // keys.  read() serves the AP list as text.
+//
+// Repeater (WDS) links: when the AP is a repeater/WDS peer, enable 4-address
+// frames with CACT_WLANCTL_SET_WDS *before* CONNECT.  The engine then speaks
+// ToDS+FromDS data frames (A3 = DA, A4 = SA) both ways, so a bridged frame
+// keeps its real source; it also latches the mode on its own the first time the
+// AP sends a 4-address frame.  EAPOL stays 3-address, as mac80211 does.
 // ===========================================================================
 #define CACT_WLANCTL_SCAN        0x3F00  // arg=NULL;          rescan, returns AP count
 #define CACT_WLANCTL_GET_BSS     0x3F01  // arg=cact_wlan_bss_t*     (index in, BSS out)
 #define CACT_WLANCTL_CONNECT     0x3F02  // arg=cact_wlan_connect_t* (auth + assoc)
 #define CACT_WLANCTL_DISCONNECT  0x3F03  // arg=NULL
+#define CACT_WLANCTL_SET_WDS     0x3F04  // arg=uint32_t*  (in 0/1; out = previous)
 #define CACT_WLANCTL_SET_KEY     0x3F05  // arg=cact_wlan_key_t*     (TK / GTK install)
 #define CACT_WLANCTL_STATUS      0x3F06  // arg=cact_wlan_status_t*  (out)
 #define CACT_WLANCTL_EAPOL_TX    0x3F07  // arg=cact_wlan_eapol_t*   (send EAPOL payload)
 #define CACT_WLANCTL_EAPOL_RX    0x3F08  // arg=cact_wlan_eapol_t*   (out; len 0 = none)
+#define CACT_WLANCTL_GET_WDS     0x3F09  // arg=uint32_t*  (out 0/1: repeater mode now?)
 
 #define CACT_WLAN_SSID_MAX   33
 #define CACT_WLAN_RSN_MAX    64

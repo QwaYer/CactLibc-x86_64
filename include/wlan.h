@@ -33,6 +33,15 @@ int wl_connect(int fd, const uint8_t bssid[6], const uint8_t *ssid,
 /* Drop the association. */
 int wl_disconnect(int fd);
 
+/* Enable/disable the repeater (WDS, 4-address) frame mode: for an uplink that
+ * is a repeater/WDS peer call wl_set_wds(fd, 1) *before* wl_connect(), so the
+ * very first uplink frame is 4-address.  Returns 0 or -1. */
+int wl_set_wds(int fd, int on);
+
+/* 1/0 when the engine is speaking 4-address (repeater/WDS) frames now, -1 on
+ * error. */
+int wl_get_wds(int fd);
+
 /* kind = CACT_WLAN_KEY_PAIRWISE (TK) or CACT_WLAN_KEY_GROUP (GTK); key_id is
  * the GTK key id the AP assigned (ignored for the pairwise key). */
 int wl_set_key(int fd, uint32_t kind, uint32_t key_id, const void *key,
