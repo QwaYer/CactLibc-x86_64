@@ -451,6 +451,7 @@ typedef struct cact_recvfrom_arg {
 #define CACT_NETCTL_IFACE_GET    0x340A  // arg=cact_iface_get_arg_t*; in index, out interface info
 #define CACT_NETCTL_ARP_COUNT    0x340B  // no arg; returns the number of live ARP entries
 #define CACT_NETCTL_ARP_GET      0x340C  // arg=cact_arp_get_arg_t*; in index, out ARP entry
+#define CACT_NETCTL_IFACE_SETCFG 0x340D  // arg=cact_iface_setcfg_arg_t* (root): set one interface's IPv4
 
 // Interface name as the driver registered it ("eth0", "wlan0").  A separate
 // ioctl rather than a field in cact_netcfg_get_t so that binaries built against
@@ -494,10 +495,12 @@ typedef struct cact_netcfg_get {
     uint32_t link_up;      // 1 when a NIC is registered / the link is up
 } cact_netcfg_get_t;
 
-// Per-interface view (CACT_NETCTL_IFACE_GET).  Index 0 is the NIC, index 1 is
-// the loopback interface (`lo`); CACT_NETCTL_IFACE_COUNT reports how many are
-// present.  The old single-NIC ioctls above stay for binaries built against
-// them.  Byte-compatible with `CactIfaceInfo` in rust_net/src/iface.rs.
+// Per-interface view (CACT_NETCTL_IFACE_GET).  Indices 0..N-1 are the
+// registered NICs (in registration order, so index 0 is the primary), the last
+// index is the loopback interface (`lo`); CACT_NETCTL_IFACE_COUNT reports how
+// many are present.  The old single-NIC ioctls above stay for binaries built
+// against them (they address the primary).  Byte-compatible with `CactIfaceInfo`
+// in rust_net/src/iface.rs.
 #define CACT_IFACE_FLAG_LOOPBACK  0x1u
 
 typedef struct cact_iface_info {
@@ -515,6 +518,19 @@ typedef struct cact_iface_get_arg {
     uint32_t index;                 // in
     cact_iface_info_t info;         // out
 } cact_iface_get_arg_t;
+
+// Configure one interface's IPv4 (CACT_NETCTL_IFACE_SETCFG, root only).  `index`
+// is the same as CACT_NETCTL_IFACE_GET (0-based, NICs first, `lo` last); `lo` is
+// not configurable.  Zeros clear the address / default route / resolver, exactly
+// as CACT_NETCTL_NETCFG does for the primary interface.  Byte-compatible with
+// `rust_net_iface_set_cfg` in rust_net/src/iface.rs.
+typedef struct cact_iface_setcfg_arg {
+    uint32_t index;                 // in
+    uint32_t ip_host;
+    uint32_t netmask_host;
+    uint32_t gateway_host;
+    uint32_t dns_host;
+} cact_iface_setcfg_arg_t;
 
 // ARP / IPv4 neighbor table (CACT_NETCTL_ARP_COUNT / CACT_NETCTL_ARP_GET).  The
 // table is learned from the ARP traffic the kernel sees; entries age out after
