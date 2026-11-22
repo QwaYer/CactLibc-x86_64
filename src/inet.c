@@ -201,7 +201,10 @@ static void fmt_v6(const uint8_t in[16], char *dst) {
             *p++ = ':';
             *p++ = ':';
             i += bestlen;
-            first = 0;
+            /* The "::" itself is the separator, so the next group must not add
+             * another leading colon (else "fe80::5054:..." came out as
+             * "fe80:::5054:..."). */
+            first = 1;
             continue;
         }
         if (!first)
