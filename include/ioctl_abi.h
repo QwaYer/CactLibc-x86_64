@@ -357,6 +357,16 @@ typedef struct cact_shmctl_arg { uint32_t shmid; uint32_t cmd; void *buf; } cact
 #define CACT_SOCKCTL_RECVMSG    0x330D  // payload + SCM_RIGHTS: arg=cact_recvmsg_arg_t*
 #define CACT_SOCKCTL_GETSOCKNAME 0x330E // arg=cact_sockname_arg_t*; local addr out
 #define CACT_SOCKCTL_GETPEERNAME 0x330F // arg=cact_sockname_arg_t*; peer addr out
+// AF_INET6 counterparts of the address-carrying ioctls above.  Kept separate
+// (rather than a family tag on the AF_INET struct) so the IPv4 ABI stays
+// byte-identical for callers built against it.
+#define CACT_SOCKCTL_BIND6        0x3310 // arg=cact_sockaddr6_arg_t*
+#define CACT_SOCKCTL_CONNECT6     0x3311 // arg=cact_sockaddr6_arg_t*
+#define CACT_SOCKCTL_ACCEPT6      0x3312 // arg=cact_accept6_arg_t*; returns new fd
+#define CACT_SOCKCTL_SENDTO6      0x3313 // arg=cact_sendto6_arg_t*
+#define CACT_SOCKCTL_RECVFROM6    0x3314 // arg=cact_recvfrom6_arg_t*
+#define CACT_SOCKCTL_GETSOCKNAME6 0x3315 // arg=cact_sockname6_arg_t*; local addr out
+#define CACT_SOCKCTL_GETPEERNAME6 0x3316 // arg=cact_sockname6_arg_t*; peer addr out
 // AF_UNIX reuses CACT_SOCKCTL_LISTEN / ACCEPT / SHUTDOWN; the data path is
 // plain read()/write(), as for AF_INET sockets.  sendmsg/recvmsg ioctls add
 // SCM_RIGHTS fd passing on AF_UNIX stream sockets (payload stays a byte
@@ -435,6 +445,41 @@ typedef struct cact_recvfrom_arg {
     uint32_t len;
 } cact_recvfrom_arg_t;
 
+// ── AF_INET6 sockaddr forms ────────────────────────────────────────────────
+// The address is the sixteen big-endian octets; the port is network order, as
+// in cact_sockaddr_in_t.  Each has the same shape as its AF_INET counterpart.
+typedef struct cact_sockaddr_in6 {
+    uint8_t  addr[16];           // IPv6 big-endian
+    uint32_t port;               // network order
+} cact_sockaddr_in6_t;
+
+typedef struct cact_sockaddr6_arg {
+    uint32_t fd;
+    cact_sockaddr_in6_t addr;
+} cact_sockaddr6_arg_t;
+
+typedef struct cact_accept6_arg {
+    cact_sockaddr_in6_t peer;    // out
+    uint32_t addrlen;            // in/out
+} cact_accept6_arg_t;
+
+typedef struct cact_sockname6_arg {
+    cact_sockaddr_in6_t addr;    // out
+    uint32_t addrlen;            // in/out
+} cact_sockname6_arg_t;
+
+typedef struct cact_sendto6_arg {
+    cact_sockaddr_in6_t dst;     // only for UDP
+    void *buf;
+    uint32_t len;
+} cact_sendto6_arg_t;
+
+typedef struct cact_recvfrom6_arg {
+    cact_sockaddr_in6_t src;     // out (only for UDP)
+    void *buf;
+    uint32_t len;
+} cact_recvfrom6_arg_t;
+
 
 // ===========================================================================
 // /dev/net control. RANGE 0x3400.
@@ -452,6 +497,11 @@ typedef struct cact_recvfrom_arg {
 #define CACT_NETCTL_ARP_COUNT    0x340B  // no arg; returns the number of live ARP entries
 #define CACT_NETCTL_ARP_GET      0x340C  // arg=cact_arp_get_arg_t*; in index, out ARP entry
 #define CACT_NETCTL_IFACE_SETCFG 0x340D  // arg=cact_iface_setcfg_arg_t* (root): set one interface's IPv4
+#define CACT_NETCTL_NETCFG6      0x340E  // arg=cact_netcfg6_arg_t* (root): set the primary interface's IPv6
+#define CACT_NETCTL_IFACE_SETCFG6 0x340F // arg=cact_iface_setcfg6_arg_t* (root): set one interface's IPv6
+#define CACT_NETCTL_PING6        0x3410  // arg=cact_ping6_arg_t*: ICMPv6 echo request
+#define CACT_NETCTL_PING_WAIT6   0x3411  // arg=cact_ping6_wait_arg_t*; returns RTT us or <0
+#define CACT_NETCTL_DNS_RESOLVE_AAAA 0x3412 // arg=cact_dns6_arg_t*: resolve a hostname to IPv6
 
 // Interface name as the driver registered it ("eth0", "wlan0").  A separate
 // ioctl rather than a field in cact_netcfg_get_t so that binaries built against
@@ -475,6 +525,24 @@ typedef struct cact_ping_wait_arg {
     uint32_t bytes_out;
 } cact_ping_wait_arg_t;
 typedef struct cact_dns_arg { char *name; uint32_t *out_ip; } cact_dns_arg_t;
+
+// AAAA counterpart of cact_dns_arg_t: `out_addr` receives sixteen big-endian
+// octets.  DNS itself still runs over IPv4, so the IPv4 link must be configured.
+typedef struct cact_dns6_arg { char *name; uint8_t *out_addr; } cact_dns6_arg_t;
+
+// ICMPv6 echo, the dual-stack counterpart of cact_ping_arg_t /
+// cact_ping_wait_arg_t.  The destination is sixteen big-endian octets; the id,
+// seq and timeout have the same meaning as for IPv4.
+typedef struct cact_ping6_arg { uint8_t dst[16]; uint32_t id; uint32_t seq; } cact_ping6_arg_t;
+typedef struct cact_ping6_wait_arg {
+    uint8_t  dst[16];
+    uint32_t id;
+    uint32_t seq;
+    uint32_t timeout_ms;
+    uint32_t rtt_us_out;   // out
+    uint8_t  src_out[16];  // out: responder address
+    uint32_t bytes_out;    // out: ICMPv6 message length
+} cact_ping6_wait_arg_t;
 
 // Link configuration set by the network manager.  ip_host/mask 0 removes the
 // interface address, gateway_host/dns_host 0 removes route / resolver server.
@@ -512,6 +580,14 @@ typedef struct cact_iface_info {
     uint8_t  mac[6];                // all-zero for a non-Ethernet interface (lo)
     uint32_t link_up;               // 1 when the interface is up
     uint32_t flags;                 // CACT_IFACE_FLAG_*
+    // IPv6, appended so the IPv4 view above stays byte-identical for callers
+    // that only read the leading fields.  All-zero means "absent" (except
+    // ip6_link_local, which every NIC interface carries).
+    uint8_t  ip6[16];               // global/ULA address (0 = none)
+    uint32_t ip6_prefix;            // prefix length for ip6 (0 when ip6 is absent)
+    uint8_t  ip6_link_local[16];    // always present on a NIC interface (fe80::/64)
+    uint8_t  ip6_gateway[16];       // default-route next hop (0 = none)
+    uint8_t  ip6_dns[16];           // AAAA resolver (0 = none)
 } cact_iface_info_t;
 
 typedef struct cact_iface_get_arg {
@@ -531,6 +607,28 @@ typedef struct cact_iface_setcfg_arg {
     uint32_t gateway_host;
     uint32_t dns_host;
 } cact_iface_setcfg_arg_t;
+
+// Set the primary interface's IPv6 (CACT_NETCTL_NETCFG6, root only) — the
+// dual-stack counterpart of CACT_NETCTL_NETCFG.  An all-zero addr clears the
+// global address, an all-zero gateway the default route and an all-zero dns the
+// resolver; the link-local address is derived by the stack and is not set here.
+typedef struct cact_netcfg6_arg {
+    uint8_t  addr[16];              // in: global/ULA address (big-endian), 0 = clear
+    uint32_t prefix;                // in: prefix length for addr (0..128)
+    uint8_t  gateway[16];           // in: default-route next hop, 0 = clear
+    uint8_t  dns[16];               // in: AAAA resolver, 0 = clear
+} cact_netcfg6_arg_t;
+
+// Configure one interface's IPv6 (CACT_NETCTL_IFACE_SETCFG6, root only).  `index`
+// is the same as CACT_NETCTL_IFACE_GET; `lo` is not configurable.  Fields as in
+// cact_netcfg6_arg_t.
+typedef struct cact_iface_setcfg6_arg {
+    uint32_t index;                 // in
+    uint8_t  addr[16];              // in
+    uint32_t prefix;                // in
+    uint8_t  gateway[16];           // in
+    uint8_t  dns[16];               // in
+} cact_iface_setcfg6_arg_t;
 
 // ARP / IPv4 neighbor table (CACT_NETCTL_ARP_COUNT / CACT_NETCTL_ARP_GET).  The
 // table is learned from the ARP traffic the kernel sees; entries age out after

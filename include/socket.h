@@ -14,11 +14,13 @@ extern "C" {
 /* ── Address families ─────────────────────────────────────────────────────── */
 #define AF_UNIX     1
 #define AF_INET     2
+#define AF_INET6   10
 #define AF_LOCAL    AF_UNIX
 
 #define PF_UNIX     AF_UNIX
 #define PF_LOCAL    AF_UNIX
 #define PF_INET     AF_INET
+#define PF_INET6    AF_INET6
 
 /* ── Socket types ─────────────────────────────────────────────────────────── */
 #define SOCK_STREAM  1
@@ -128,6 +130,25 @@ struct sockaddr_in {
     uint8_t  sin_zero[8];
 };
 
+/* IPv6, the standard layouts.  `sin6_scope_id` is present for API
+ * compatibility; the kernel does not carry a scope id (a link-local peer's
+ * interface is chosen by routing), so it is ignored on the way in and zero on
+ * the way out. */
+struct in6_addr {
+    uint8_t s6_addr[16];
+};
+
+struct sockaddr_in6 {
+    uint16_t sin6_family;    /* AF_INET6 */
+    uint16_t sin6_port;      /* network byte order — use htons() */
+    uint32_t sin6_flowinfo;
+    struct in6_addr sin6_addr;
+    uint32_t sin6_scope_id;
+};
+
+#define IN6ADDR_ANY_INIT { { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 } }
+#define IN6ADDR_LOOPBACK_INIT { { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1 } }
+
 struct sockaddr_un {
     uint16_t sun_family;   /* AF_UNIX */
     char     sun_path[108];
@@ -207,6 +228,18 @@ int getsockopt(int fd, int level, int optname,
 
 /* Hostname or dotted-decimal IPv4 → host byte order IPv4 (blocking; needs DNS server from DHCP/netcfg). */
 int dns_resolve(const char *name, uint32_t *out_ip_host);
+
+/* Hostname → IPv6 address (AAAA); `out_addr` receives 16 big-endian octets.
+   Needs the IPv4 link configured (DNS itself runs over IPv4).  Same blocking
+   and error contract as dns_resolve. */
+int dns_resolve_aaaa(const char *name, uint8_t out_addr[16]);
+
+/* Text ↔ binary address conversion (AF_INET and AF_INET6).  inet_pton returns
+   1 on success, 0 on a malformed address, -1 when the family is unsupported.
+   inet_ntop returns `dst`, or NULL with errno=ENOSPC when the buffer is too
+   small (and errno=EAFNOSUPPORT for an unknown family). */
+int inet_pton(int af, const char *src, void *dst);
+const char *inet_ntop(int af, const void *src, char *dst, uint32_t size);
 
 #ifdef __cplusplus
 } /* extern "C" */

@@ -1,5 +1,6 @@
 #include "socket.h"
 #include "nodeio.h"
+#include "sockfam.h"
 #include "syscall.h"
 #include "errno.h"
 #include "fcntl.h"
@@ -47,6 +48,7 @@ int socket(int domain, int type, int protocol) {
     a.proto  = (uint32_t)protocol;
     int r = nio_dev_cmd("net", CACT_NETCTL_SOCKET, &a);
     if (r < 0) { errno = -r; return -1; }
+    __cact_sockfam_set(r, domain);
     if (flags && _fd_apply_flags(r, flags) < 0) {
         close(r);
         errno = EINVAL;
@@ -68,6 +70,8 @@ int socketpair(int domain, int type, int protocol, int sv[2]) {
     if (r < 0) { errno = -r; return -1; }
     sv[0] = (int)a.fds[0];
     sv[1] = (int)a.fds[1];
+    __cact_sockfam_set(sv[0], AF_UNIX);
+    __cact_sockfam_set(sv[1], AF_UNIX);
     if (flags) {
         if (_fd_apply_flags(sv[0], flags) < 0 || _fd_apply_flags(sv[1], flags) < 0) {
             close(sv[0]);
@@ -108,6 +112,17 @@ int bind(int fd, const struct sockaddr *addr, uint32_t addrlen) {
         return 0;
     }
 
+    if (family == AF_INET6) {
+        if (addrlen < sizeof(struct sockaddr_in6)) { errno = EINVAL; return -1; }
+        const struct sockaddr_in6 *s6 = (const struct sockaddr_in6 *)addr;
+        cact_sockaddr6_arg_t a;
+        __builtin_memcpy(a.addr.addr, s6->sin6_addr.s6_addr, 16);
+        a.addr.port = s6->sin6_port;
+        int r = nio_ioctl(fd, CACT_SOCKCTL_BIND6, &a);
+        if (r < 0) { errno = -r; return -1; }
+        return 0;
+    }
+
     errno = EAFNOSUPPORT;
     return -1;
 }
@@ -141,6 +156,17 @@ int connect(int fd, const struct sockaddr *addr, uint32_t addrlen) {
         return 0;
     }
 
+    if (family == AF_INET6) {
+        if (addrlen < sizeof(struct sockaddr_in6)) { errno = EINVAL; return -1; }
+        const struct sockaddr_in6 *s6 = (const struct sockaddr_in6 *)addr;
+        cact_sockaddr6_arg_t a;
+        __builtin_memcpy(a.addr.addr, s6->sin6_addr.s6_addr, 16);
+        a.addr.port = s6->sin6_port;
+        int r = nio_ioctl(fd, CACT_SOCKCTL_CONNECT6, &a);
+        if (r < 0) { errno = -r; return -1; }
+        return 0;
+    }
+
     errno = EAFNOSUPPORT;
     return -1;
 }
@@ -153,10 +179,32 @@ int listen(int fd, int backlog) {
 }
 
 int accept(int fd, struct sockaddr *addr, uint32_t *addrlen) {
+    if (__cact_sockfam_get(fd) == AF_INET6) {
+        cact_accept6_arg_t a;
+        a.addrlen = 0;
+        int r = nio_ioctl(fd, CACT_SOCKCTL_ACCEPT6, &a);
+        if (r < 0) { errno = -r; return -1; }
+        __cact_sockfam_set(r, AF_INET6);
+        if (addrlen) {
+            if (addr && *addrlen >= sizeof(struct sockaddr_in6)) {
+                struct sockaddr_in6 *s6 = (struct sockaddr_in6 *)addr;
+                s6->sin6_family   = AF_INET6;
+                s6->sin6_port     = (uint16_t)a.peer.port;
+                __builtin_memcpy(s6->sin6_addr.s6_addr, a.peer.addr, 16);
+                s6->sin6_flowinfo = 0;
+                s6->sin6_scope_id = 0;
+            }
+            *addrlen = sizeof(struct sockaddr_in6);
+        }
+        return r;
+    }
+
     cact_accept_arg_t a;
     a.addrlen = 0;
     int r = nio_ioctl(fd, CACT_SOCKCTL_ACCEPT, &a);
     if (r < 0) { errno = -r; return -1; }
+    /* The accepted child inherits the listener's family (AF_UNIX or AF_INET). */
+    __cact_sockfam_set(r, __cact_sockfam_get(fd));
 
     if (addrlen) {
         if (a.addrlen == sizeof(struct sockaddr_in)) {
@@ -340,6 +388,20 @@ int sendto(int fd, const void *buf, uint32_t len, int flags,
            const struct sockaddr *dest, uint32_t addrlen) {
     (void)flags;
     if (!dest) { errno = EINVAL; return -1; }
+
+    if (_family(dest) == AF_INET6) {
+        if (addrlen < sizeof(struct sockaddr_in6)) { errno = EINVAL; return -1; }
+        const struct sockaddr_in6 *s6 = (const struct sockaddr_in6 *)dest;
+        cact_sendto6_arg_t a;
+        __builtin_memcpy(a.dst.addr, s6->sin6_addr.s6_addr, 16);
+        a.dst.port = s6->sin6_port;
+        a.buf      = (void *)buf;
+        a.len      = len;
+        int r = nio_ioctl(fd, CACT_SOCKCTL_SENDTO6, &a);
+        if (r < 0) { errno = -r; return -1; }
+        return r;
+    }
+
     if (_family(dest) != AF_INET) { errno = EAFNOSUPPORT; return -1; }
     if (addrlen < sizeof(struct sockaddr_in)) { errno = EINVAL; return -1; }
     const struct sockaddr_in *sin = (const struct sockaddr_in *)dest;
@@ -356,6 +418,24 @@ int sendto(int fd, const void *buf, uint32_t len, int flags,
 int recvfrom(int fd, void *buf, uint32_t len, int flags,
              struct sockaddr *src, uint32_t *addrlen) {
     (void)flags;
+    if (__cact_sockfam_get(fd) == AF_INET6) {
+        cact_recvfrom6_arg_t a;
+        a.buf = buf;
+        a.len = len;
+        int r = nio_ioctl(fd, CACT_SOCKCTL_RECVFROM6, &a);
+        if (r < 0) { errno = -r; return -1; }
+        if (src && addrlen && *addrlen >= sizeof(struct sockaddr_in6)) {
+            struct sockaddr_in6 *s6 = (struct sockaddr_in6 *)src;
+            s6->sin6_family   = AF_INET6;
+            s6->sin6_port     = (uint16_t)a.src.port;
+            __builtin_memcpy(s6->sin6_addr.s6_addr, a.src.addr, 16);
+            s6->sin6_flowinfo = 0;
+            s6->sin6_scope_id = 0;
+            *addrlen = sizeof(struct sockaddr_in6);
+        }
+        return r;
+    }
+
     cact_recvfrom_arg_t a;
     a.buf = buf;
     a.len = len;
@@ -380,13 +460,33 @@ int shutdown(int fd, int how) {
 
 /* getsockname()/getpeername(): the kernel fills a cact_sockaddr_in_t (network
    order addr+port) and reports the bytes it wrote in addrlen. */
-static int _sock_name(int fd, unsigned long cmd,
+static int _sock_name(int fd, unsigned long cmd_v4, unsigned long cmd_v6,
                       struct sockaddr *addr, uint32_t *addrlen) {
     if (!addr || !addrlen) { errno = EINVAL; return -1; }
+
+    if (__cact_sockfam_get(fd) == AF_INET6) {
+        cact_sockname6_arg_t a;
+        __builtin_memset(&a, 0, sizeof(a));
+        a.addrlen = *addrlen;
+        int r = nio_ioctl(fd, cmd_v6, &a);
+        if (r < 0) { errno = -r; return -1; }
+        if (a.addrlen < sizeof(struct sockaddr_in6)) { errno = EINVAL; return -1; }
+        if (*addrlen >= sizeof(struct sockaddr_in6)) {
+            struct sockaddr_in6 *s6 = (struct sockaddr_in6 *)addr;
+            s6->sin6_family   = AF_INET6;
+            s6->sin6_port     = (uint16_t)a.addr.port;
+            __builtin_memcpy(s6->sin6_addr.s6_addr, a.addr.addr, 16);
+            s6->sin6_flowinfo = 0;
+            s6->sin6_scope_id = 0;
+        }
+        *addrlen = sizeof(struct sockaddr_in6);
+        return 0;
+    }
+
     cact_sockname_arg_t a;
     __builtin_memset(&a, 0, sizeof(a));
     a.addrlen = *addrlen;
-    int r = nio_ioctl(fd, cmd, &a);
+    int r = nio_ioctl(fd, cmd_v4, &a);
     if (r < 0) { errno = -r; return -1; }
     if (a.addrlen < sizeof(struct sockaddr_in)) { errno = EINVAL; return -1; }
 
@@ -400,11 +500,11 @@ static int _sock_name(int fd, unsigned long cmd,
 }
 
 int getsockname(int fd, struct sockaddr *addr, uint32_t *addrlen) {
-    return _sock_name(fd, CACT_SOCKCTL_GETSOCKNAME, addr, addrlen);
+    return _sock_name(fd, CACT_SOCKCTL_GETSOCKNAME, CACT_SOCKCTL_GETSOCKNAME6, addr, addrlen);
 }
 
 int getpeername(int fd, struct sockaddr *addr, uint32_t *addrlen) {
-    return _sock_name(fd, CACT_SOCKCTL_GETPEERNAME, addr, addrlen);
+    return _sock_name(fd, CACT_SOCKCTL_GETPEERNAME, CACT_SOCKCTL_GETPEERNAME6, addr, addrlen);
 }
 
 int setsockopt(int fd, int level, int optname,

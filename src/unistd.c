@@ -10,6 +10,7 @@
 #include "stdlib.h"
 #include "string.h"
 #include "pthread.h"      /* the fork() handlers: pthread_atfork() */
+#include "sockfam.h"
 #include <stdint.h>
 
 /* ── process lifecycle (core traps) ── */
@@ -23,6 +24,7 @@ ssize_t write(int fd, const void *buf, size_t count) {
 }
 
 int close(int fd) {
+    __cact_sockfam_clear(fd);
     return (int)syscall(SYS_CLOSE, (uintptr_t)fd, 0, 0);
 }
 
@@ -232,13 +234,17 @@ int ioctl(int fd, unsigned long cmd, void *arg) {
 }
 
 int dup(int oldfd) {
-    return nio_map(nio_ioctl(oldfd, CACT_FDCTL_DUP, 0));
+    int r = nio_map(nio_ioctl(oldfd, CACT_FDCTL_DUP, 0));
+    if (r >= 0) __cact_sockfam_move(oldfd, r);
+    return r;
 }
 
 int dup2(int oldfd, int newfd) {
     cact_fd_arg_t a;
     a.newfd = (uint32_t)newfd;
-    return nio_map(nio_ioctl(oldfd, CACT_FDCTL_DUP2, &a));
+    int r = nio_map(nio_ioctl(oldfd, CACT_FDCTL_DUP2, &a));
+    if (r >= 0) __cact_sockfam_move(oldfd, newfd);
+    return r;
 }
 
 int dup3(int oldfd, int newfd, int flags) {

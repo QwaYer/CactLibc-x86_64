@@ -1,4 +1,5 @@
 #include "nodeio.h"
+#include "sockfam.h"
 #include "syscall.h"
 #include "errno.h"
 #include "fcntl.h"
@@ -11,6 +12,7 @@ int nio_open(const char *path, int flags) {
 }
 
 int nio_close(int fd) {
+    __cact_sockfam_clear(fd);
     return (int)syscall(SYS_CLOSE, (uintptr_t)fd, 0, 0);
 }
 
