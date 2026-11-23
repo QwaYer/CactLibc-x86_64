@@ -500,7 +500,7 @@ typedef struct cact_recvfrom6_arg {
 #define CACT_NETCTL_NETCFG6      0x340E  // arg=cact_netcfg6_arg_t* (root): set the primary interface's IPv6
 #define CACT_NETCTL_IFACE_SETCFG6 0x340F // arg=cact_iface_setcfg6_arg_t* (root): set one interface's IPv6
 #define CACT_NETCTL_PING6        0x3410  // arg=cact_ping6_arg_t*: ICMPv6 echo request
-#define CACT_NETCTL_PING_WAIT6   0x3411  // arg=cact_ping6_wait_arg_t*; returns RTT us or <0
+#define CACT_NETCTL_PING_WAIT6   0x3411  // arg=cact_ping6_wait_arg_t*; RTT us, or <0: -1 timeout, -2 no IPv6 route/address, -4 EINTR
 #define CACT_NETCTL_DNS_RESOLVE_AAAA 0x3412 // arg=cact_dns6_arg_t*: resolve a hostname to IPv6
 // Firewall (packet filter + NAT) control; arg types below.  Configuration is
 // root-only except the read paths (COUNT / GET / POLICY_GET).
