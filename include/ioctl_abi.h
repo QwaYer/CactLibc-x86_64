@@ -600,7 +600,7 @@ typedef struct cact_iface_info {
     uint32_t ip6_prefix;            // prefix length for ip6 (0 when ip6 is absent)
     uint8_t  ip6_link_local[16];    // always present on a NIC interface (fe80::/64)
     uint8_t  ip6_gateway[16];       // default-route next hop (0 = none)
-    uint8_t  ip6_dns[16];           // AAAA resolver (0 = none)
+    uint8_t  ip6_dns[16];           // IPv6 resolver, queried over IPv6 (0 = none)
 } cact_iface_info_t;
 
 typedef struct cact_iface_get_arg {
@@ -629,7 +629,7 @@ typedef struct cact_netcfg6_arg {
     uint8_t  addr[16];              // in: global/ULA address (big-endian), 0 = clear
     uint32_t prefix;                // in: prefix length for addr (0..128)
     uint8_t  gateway[16];           // in: default-route next hop, 0 = clear
-    uint8_t  dns[16];               // in: AAAA resolver, 0 = clear
+    uint8_t  dns[16];               // in: IPv6 resolver (queried over IPv6), 0 = clear
 } cact_netcfg6_arg_t;
 
 // Configure one interface's IPv6 (CACT_NETCTL_IFACE_SETCFG6, root only).  `index`
