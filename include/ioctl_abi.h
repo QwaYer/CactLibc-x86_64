@@ -502,6 +502,19 @@ typedef struct cact_recvfrom6_arg {
 #define CACT_NETCTL_PING6        0x3410  // arg=cact_ping6_arg_t*: ICMPv6 echo request
 #define CACT_NETCTL_PING_WAIT6   0x3411  // arg=cact_ping6_wait_arg_t*; returns RTT us or <0
 #define CACT_NETCTL_DNS_RESOLVE_AAAA 0x3412 // arg=cact_dns6_arg_t*: resolve a hostname to IPv6
+// Firewall (packet filter + NAT) control; arg types below.  Configuration is
+// root-only except the read paths (COUNT / GET / POLICY_GET).
+#define CACT_NETCTL_FW_RULE_ADD    0x3420 // arg=cact_fw_rule_t* (root): append a rule to its chain
+#define CACT_NETCTL_FW_RULE_DEL    0x3421 // arg=cact_fw_idx_arg_t* (root): delete a rule by index
+#define CACT_NETCTL_FW_RULE_COUNT  0x3422 // arg=cact_fw_chain_arg_t*: rules in one chain
+#define CACT_NETCTL_FW_RULE_GET    0x3423 // arg=cact_fw_get_arg_t*: read one rule and its counters
+#define CACT_NETCTL_FW_FLUSH       0x3424 // arg=cact_fw_chain_arg_t* (root): remove every rule in a chain
+#define CACT_NETCTL_FW_POLICY_SET  0x3425 // arg=cact_fw_policy_arg_t* (root): set a chain's default policy
+#define CACT_NETCTL_FW_POLICY_GET  0x3426 // arg=cact_fw_chain_arg_t*: read a chain's default policy
+#define CACT_NETCTL_FW_RESET       0x3427 // no arg (root): flush every chain, reset every policy
+#define CACT_NETCTL_FW_CONN_COUNT  0x3428 // no arg: number of live tracked flows
+#define CACT_NETCTL_FW_CONN_GET    0x3429 // arg=cact_fw_conn_get_arg_t*: read one tracked flow
+#define CACT_NETCTL_FW_CONN_FLUSH  0x342A // no arg (root): forget every tracked flow
 
 // Interface name as the driver registered it ("eth0", "wlan0").  A separate
 // ioctl rather than a field in cact_netcfg_get_t so that binaries built against
@@ -648,6 +661,105 @@ typedef struct cact_arp_get_arg {
     uint32_t index;                 // in
     cact_arp_entry_t entry;         // out
 } cact_arp_get_arg_t;
+
+// ===========================================================================
+// Firewall (packet filter + NAT) — see rust_net/src/fw.rs.
+//
+// A chain holds ordered rules plus a default policy; the first rule that matches
+// a frame decides its verdict and, with no match, the policy applies.  The
+// default policy is ACCEPT, so an unconfigured kernel behaves as before.  The
+// filter chains (INPUT/OUTPUT/FORWARD) take ACCEPT/DROP; the NAT chains take
+// their translation actions (PREROUTING: DNAT/REDIRECT, POSTROUTING:
+// SNAT/MASQUERADE).  Byte-compatible with `FwRule` in fw.rs.
+// ===========================================================================
+#define CACT_FW_CHAIN_INPUT       0  // frames delivered to the local stack
+#define CACT_FW_CHAIN_OUTPUT      1  // frames emitted by the local stack
+#define CACT_FW_CHAIN_FORWARD     2  // frames routed through the box
+#define CACT_FW_CHAIN_PREROUTING  3  // DNAT / REDIRECT, before the routing decision
+#define CACT_FW_CHAIN_POSTROUTING 4  // SNAT / MASQUERADE, after the routing decision
+#define CACT_FW_CHAIN_COUNT       5
+
+#define CACT_FW_ACTION_ACCEPT     0
+#define CACT_FW_ACTION_DROP       1
+#define CACT_FW_ACTION_SNAT       2  // rewrite the source (POSTROUTING)
+#define CACT_FW_ACTION_DNAT       3  // rewrite the destination (PREROUTING)
+#define CACT_FW_ACTION_MASQUERADE 4  // source = the egress interface's address
+#define CACT_FW_ACTION_REDIRECT   5  // destination = the local host
+
+#define CACT_FW_FAMILY_ANY  0
+#define CACT_FW_FAMILY_V4   4
+#define CACT_FW_FAMILY_V6   6
+
+#define CACT_FW_PROTO_ANY    0
+#define CACT_FW_PROTO_ICMP   1
+#define CACT_FW_PROTO_TCP    6
+#define CACT_FW_PROTO_UDP    17
+#define CACT_FW_PROTO_ICMPV6 58
+
+// Connection states a rule may match (conntrack).
+#define CACT_FW_STATE_NEW         0x01
+#define CACT_FW_STATE_ESTABLISHED 0x02
+#define CACT_FW_STATE_RELATED     0x04
+
+#define CACT_FW_IFACE_ANY  0xFF  // in_iface: match any interface slot
+#define CACT_FW_ICMP_ANY   0xFF  // icmp_type: match any ICMP/ICMPv6 type
+#define CACT_FW_RULES_MAX  64    // rules per chain
+
+typedef struct cact_fw_rule {
+    uint8_t  chain;         // CACT_FW_CHAIN_*
+    uint8_t  action;        // CACT_FW_ACTION_*
+    uint8_t  family;        // CACT_FW_FAMILY_* (0 = any)
+    uint8_t  proto;         // CACT_FW_PROTO_* (0 = any)
+    uint8_t  has_src;       // match src address when non-zero
+    uint8_t  has_dst;       // match dst address when non-zero
+    uint8_t  src_prefix;    // prefix length for src (family-dependent)
+    uint8_t  dst_prefix;    // prefix length for dst
+    uint8_t  state_mask;    // CACT_FW_STATE_* this rule matches (0 = any)
+    uint8_t  icmp_type;     // ICMP/ICMPv6 type, CACT_FW_ICMP_ANY = any
+    uint8_t  in_iface;      // interface slot, CACT_FW_IFACE_ANY = any
+    uint8_t  _pad;
+    uint16_t src_port_min;  // TCP/UDP source-port range (0 = any)
+    uint16_t src_port_max;  // 0 with a non-zero min means "up to 65535"
+    uint16_t dst_port_min;  // TCP/UDP destination-port range (0 = any)
+    uint16_t dst_port_max;
+    uint16_t nat_port;      // SNAT/DNAT/REDIRECT target port (0 = keep)
+    uint16_t _pad2;
+    uint64_t packets;       // out: matched packets (zeroed on add)
+    uint64_t bytes;         // out: matched bytes (L3 length)
+    uint8_t  src[16];       // source address (IPv4 in the first 4 octets)
+    uint8_t  dst[16];       // destination address
+    uint8_t  nat_addr[16];  // SNAT/DNAT target address
+} cact_fw_rule_t;
+
+typedef struct cact_fw_chain_arg { uint32_t chain; } cact_fw_chain_arg_t;
+typedef struct cact_fw_idx_arg { uint32_t chain; uint32_t index; } cact_fw_idx_arg_t;
+typedef struct cact_fw_get_arg { uint32_t chain; uint32_t index; cact_fw_rule_t rule; } cact_fw_get_arg_t;
+typedef struct cact_fw_policy_arg { uint32_t chain; uint32_t policy; } cact_fw_policy_arg_t;
+
+// A tracked connection (CACT_NETCTL_FW_CONN_GET).  The tuple is in the flow's
+// original direction; the `x*` fields are the NAT-translated tuple (all-zero =
+// not translated).
+#define CACT_FW_CONN_MAX 256 // tracked-flow capacity (informational)
+typedef struct cact_fw_conn {
+    uint8_t  family;
+    uint8_t  proto;
+    uint8_t  state;     // CACT_FW_STATE_*
+    uint8_t  flags;     // reserved (0)
+    uint8_t  src[16];
+    uint8_t  dst[16];
+    uint16_t sport;
+    uint16_t dport;
+    uint8_t  xsrc[16];  // translated source (SNAT)
+    uint8_t  xdst[16];  // translated destination (DNAT)
+    uint16_t xsport;
+    uint16_t xdport;
+    uint32_t age_ms;
+    uint32_t ttl_ms;
+    uint32_t packets;
+    uint32_t bytes;
+} cact_fw_conn_t;
+
+typedef struct cact_fw_conn_get_arg { uint32_t index; cact_fw_conn_t conn; } cact_fw_conn_get_arg_t;
 
 // ===========================================================================
 // /dev/sys control (privileged, root only). RANGE 0x3500.
