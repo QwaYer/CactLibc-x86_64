@@ -1229,6 +1229,92 @@ typedef struct cact_mq_notify_arg {
     uint32_t signo;
 } cact_mq_notify_arg_t;
 
+// ===========================================================================
+// /dev/chv — the Cact hypervisor control node.  RANGE 0x4100.
+//
+// The device is the userspace door to the hypervisor model (`cact_hv`); the
+// kernel no longer probes VT-x/AMD-V at boot.  A run enters host mode, launches
+// the model's guest, and leaves host mode again before returning.
+//
+//   `caps` is the OR of the host's hardware virtualization extensions:
+//     bit 0 — VT-x (Intel), bit 1 — AMD-V.  Zero means neither is usable.
+// ===========================================================================
+#define CACT_CHVCTL_CAPS       0x4101  // arg=cact_chv_caps_t* (out)
+#define CACT_CHVCTL_RUN        0x4102  // arg=cact_chv_run_arg_t* (out: status + exit reason)
+#define CACT_CHVCTL_GET_REGS   0x4103  // arg=cact_chv_regs_t* (out)
+#define CACT_CHVCTL_SET_REGS   0x4104  // arg=const cact_chv_regs_t* (in)
+#define CACT_CHVCTL_GET_SREGS  0x4105  // arg=cact_chv_sregs_t* (out)
+#define CACT_CHVCTL_SET_SREGS  0x4106  // arg=const cact_chv_sregs_t* (in)
+#define CACT_CHVCTL_GET_MSRS   0x4107  // arg=cact_chv_msrs_t* (in: count; out: count + values)
+#define CACT_CHVCTL_SET_MSRS   0x4108  // arg=const cact_chv_msrs_t* (in)
+#define CACT_CHVCTL_INJECT_IRQ 0x4109  // arg=const cact_chv_irq_t* (in)
+
+typedef struct cact_chv_caps {
+    uint32_t caps;              // out: 1 = VT-x, 2 = AMD-V; 0 = none
+    uint32_t running_as_guest;  // out: non-zero when CactOS itself is a guest
+    uint32_t reserved;          // 0
+} cact_chv_caps_t;
+
+typedef struct cact_chv_run_arg {
+    uint64_t exit_reason;       // out: the VM-exit reason of the last run (12 = HLT)
+    uint32_t status;            // out: 0 = the guest ran, non-zero = it did not
+} cact_chv_run_arg_t;
+
+// The full general-purpose register file plus RIP/RFLAGS (KVM-style layout:
+// RSP/RBP sit with the GPRs).  The vCPU state is persistent between RUNs.
+typedef struct cact_chv_regs {
+    uint64_t rax, rbx, rcx, rdx;
+    uint64_t rsi, rdi, rsp, rbp;
+    uint64_t r8, r9, r10, r11, r12, r13, r14, r15;
+    uint64_t rip, rflags;
+} cact_chv_regs_t;
+
+// One segment register: base, limit, selector and access rights (the raw VMCS
+// AR encoding, e.g. 0xA09B for a 64-bit code segment).
+typedef struct cact_chv_seg {
+    uint64_t base;
+    uint32_t limit;
+    uint32_t selector;
+    uint32_t ar;
+    uint32_t reserved;
+} cact_chv_seg_t;
+
+// System registers: the segment set, the descriptor-table bases, the control
+// and debug registers.  Guest CR3 and TR are the fixture model's own property
+// (it owns the guest page tables and the TSS page), so those two read back
+// model state and are ignored on SET.
+typedef struct cact_chv_sregs {
+    cact_chv_seg_t cs, ss, ds, es, fs, gs;
+    uint64_t gdtr_base, idtr_base;
+    uint64_t cr0, cr2, cr3, cr4;
+    uint64_t dr0, dr1, dr2, dr3, dr6, dr7;
+    uint32_t gdtr_limit, idtr_limit;
+    uint32_t reserved;
+} cact_chv_sregs_t;
+
+// One model-specific register.  On GET, bit 0 of `reserved` is 1 when the model
+// does not track that index (the returned value is 0).
+typedef struct cact_chv_msr {
+    uint32_t index;
+    uint32_t reserved;   // out (GET): bit 0 = unknown index
+    uint64_t value;      // in (SET) / out (GET)
+} cact_chv_msr_t;
+
+#define CACT_CHV_MSRS_MAX 16
+typedef struct cact_chv_msrs {
+    uint32_t count;      // in: entries (SET) / out: entries filled (GET)
+    uint32_t reserved;
+    cact_chv_msr_t entries[CACT_CHV_MSRS_MAX];
+} cact_chv_msrs_t;
+
+// Inject one external interrupt into the guest at its next entry.  The pending
+// vector survives until delivered; delivery needs the guest to have a valid
+// IDT and interrupts enabled.
+typedef struct cact_chv_irq {
+    uint32_t vector;
+    uint32_t reserved;
+} cact_chv_irq_t;
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
