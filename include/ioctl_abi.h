@@ -1248,6 +1248,8 @@ typedef struct cact_mq_notify_arg {
 #define CACT_CHVCTL_GET_MSRS   0x4107  // arg=cact_chv_msrs_t* (in: count; out: count + values)
 #define CACT_CHVCTL_SET_MSRS   0x4108  // arg=const cact_chv_msrs_t* (in)
 #define CACT_CHVCTL_INJECT_IRQ 0x4109  // arg=const cact_chv_irq_t* (in)
+#define CACT_CHVCTL_MAP_MEMORY   0x410A  // arg=const cact_chv_memory_t* (in)
+#define CACT_CHVCTL_UNMAP_MEMORY 0x410B  // arg=const cact_chv_memory_t* (in: slot)
 
 typedef struct cact_chv_caps {
     uint32_t caps;              // out: 1 = VT-x, 2 = AMD-V; 0 = none
@@ -1314,6 +1316,20 @@ typedef struct cact_chv_irq {
     uint32_t vector;
     uint32_t reserved;
 } cact_chv_irq_t;
+
+// One guest-memory slot: a userspace buffer `hva` (a QEMU-like VMM's mmap of
+// guest RAM/ROM) backing the guest-physical range [gpa, gpa+size).  MAP pins the
+// buffer's pages and installs them into the guest's EPT; UNMAP releases them
+// (only `slot` matters then).  A MAP with an existing slot id replaces it.
+// `flags` is reserved (0 = read/write/execute).
+#define CACT_CHV_MEMORY_MAX 8
+typedef struct cact_chv_memory {
+    uint32_t slot;      // in: slot id (0..CACT_CHV_MEMORY_MAX-1)
+    uint32_t flags;     // in: reserved, 0 = RWX
+    uint64_t gpa;       // in: guest-physical base (4 KiB aligned)
+    uint64_t hva;       // in: userspace virtual base (4 KiB aligned)
+    uint64_t size;      // in: bytes (nonzero multiple of 4 KiB)
+} cact_chv_memory_t;
 
 #ifdef __cplusplus
 } /* extern "C" */
