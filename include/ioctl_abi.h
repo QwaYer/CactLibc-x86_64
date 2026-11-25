@@ -789,6 +789,29 @@ typedef struct cact_module_arg { char *path; uint32_t vendor_id; uint32_t device
 #define CACT_PIPECTL_CREATE 0x3601  // arg=uint32_t fds[2] (out)
 
 // ===========================================================================
+// /dev/zmem control (privileged, root only): the single atomic interface to the
+// compressed-memory backends (zram, zswap).  Each call configures and enables
+// in one step — no sysfs text files, no half-configured device, no race between
+// "set size" and "set algorithm".  RANGE 0x4200.
+// ===========================================================================
+#define CACT_ZMEM_ZSWAP_SET    0x4201  // arg=cact_zmem_zswap_t*: on (limit+level+writeback) or off
+#define CACT_ZMEM_ZRAM_CREATE  0x4202  // arg=cact_zmem_zram_create_t*: creates a ready /dev/<name>
+#define CACT_ZMEM_ZRAM_DESTROY 0x4203  // arg=char* name: refused while the device backs swap
+
+typedef struct cact_zmem_zswap {
+    uint32_t enabled;         // 0 = off (stop accepting pages), 1 = on
+    uint32_t max_pool_pct;    // pool limit as % of RAM (1..100)
+    int32_t  compress_level;  // zstd level (0 = library default)
+    uint32_t writeback;       // 1 = a full pool migrates a page to the device first
+} cact_zmem_zswap_t;
+
+typedef struct cact_zmem_zram_create {
+    uint64_t size_bytes;      // device capacity in bytes (>= one page)
+    int32_t  compress_level;  // zstd level (0 = library default)
+    char     name[16];        // "zram0", NUL-terminated
+} cact_zmem_zram_create_t;
+
+// ===========================================================================
 // /dev/crypto control. RANGE 0x3700.
 //
 // Exposes the in-kernel crypto primitives (the same algorithms the rustls
