@@ -17,6 +17,12 @@ typedef long time_t;
 typedef int clockid_t;
 typedef int timer_t;
 
+/* clock()/CLOCKS_PER_SEC.  CactOS exposes no per-process CPU accounting to
+ * userspace, so clock() reports elapsed CLOCK_MONOTONIC time; the constant is
+ * the POSIX-mandated 1000000 (1 µs ticks) even though the kernel timer is 1 ms. */
+typedef long clock_t;
+#define CLOCKS_PER_SEC 1000000
+
 struct tm {
     int tm_sec;
     int tm_min;
@@ -75,6 +81,8 @@ char *ctime(const time_t *timep);
 char *ctime_r(const time_t *timep, char *buf);
 int gettimeofday(struct timeval *tv, void *tz);
 int clock_gettime(int clkid, struct timespec *tp);
+/* Elapsed processor time since an arbitrary point (see CLOCKS_PER_SEC). */
+clock_t clock(void);
 /* Sets the wall clock (CLOCK_REALTIME only) through the kernel's
  * /dev/sys CACT_SYSCTL_SETWALLCLOCK; needs root. */
 int clock_settime(int clkid, const struct timespec *tp);

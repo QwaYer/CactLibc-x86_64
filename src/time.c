@@ -44,6 +44,16 @@ int clock_gettime(int clkid, struct timespec *tp) {
     return 0;
 }
 
+/* Elapsed processor time (see CLOCKS_PER_SEC).  There is no per-process CPU
+ * accounting in the kernel, so this is elapsed monotonic time — what the zstd
+ * front end and its dictionary trainer use it for. */
+clock_t clock(void) {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return (clock_t)-1;
+    return (clock_t)((long long)ts.tv_sec * CLOCKS_PER_SEC
+                     + (long long)ts.tv_nsec / (1000000000LL / CLOCKS_PER_SEC));
+}
+
 int clock_getres(int clkid, struct timespec *res) {
     if (clkid != CLOCK_REALTIME && clkid != CLOCK_MONOTONIC) {
         errno = EINVAL;

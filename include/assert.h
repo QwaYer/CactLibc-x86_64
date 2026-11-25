@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 #include <stdio.h>
+#include <stdlib.h>   /* abort(), which the failing assert() below calls */
 
 #ifndef NDEBUG
 #define assert(x) do { if (!(x)) { fprintf(stderr, "Assertion failed: %s, file %s, line %d\n", #x, __FILE__, __LINE__); abort(); } } while(0)
