@@ -13,7 +13,7 @@ extern "C" {
  * File-tree walk (nftw/ftw).
  *
  * The type codes and the flag bits are the standard ones; the walk itself is
- * in src/ftw.c.  CactOS's cctkfs carries no symlinks, so the FTW_SL/FTW_SLN
+ * in src/ftw.c.  CactOS's localbinrepo carries no symlinks, so the FTW_SL/FTW_SLN
  * codes and FTW_PHYS/FTW_CHDIR only exist for source compatibility — nothing
  * here ever produces them.
  */

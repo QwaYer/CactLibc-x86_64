@@ -298,7 +298,7 @@ OK`), `meson test -C build-meson` зелёный, `ninja -C build-meson` без 
 - **TLS-модели `-fPIC`-объектов** — вопрос закрыт фикстурами Фазы 5:
   `R_X86_64_TPOFF64` для initial-exec, пара `DTPMOD64`/`DTPOFF64` для
   general-dynamic. Проверено `readelf -r`, а не рассуждением.
-- **`cact_sign`/`cctkfs`** — libc не собирает `.cctk`; порт модулей — сторона
+- **`cact_sign`/`localbinrepo`** — libc не собирает `.cctk`; порт модулей — сторона
   ядра и драйверов.
 - **Общие с соседями заголовки** (`dl_objects.h`, `tls_layout.h`) — по одному
   экземпляру на репозиторий; при расхождении верю компилятору.

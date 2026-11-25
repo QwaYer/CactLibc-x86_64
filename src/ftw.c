@@ -7,7 +7,7 @@
  * VFS stores a name in 128 bytes and a path in the same order of size), so the
  * recursion depth is bounded too — no explicit depth cap is needed.
  *
- * cctkfs carries no symlinks and no mount crossings inside one mount, so the
+ * localbinrepo carries no symlinks and no mount crossings inside one mount, so the
  * FTW_PHYS/FTW_CHDIR flags have nothing to change and FTW_MOUNT is honoured
  * with the start directory's st_dev (CactOS's st_dev is per-node).
  */

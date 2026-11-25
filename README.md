@@ -39,7 +39,7 @@ CactLib is the **contract surface** between user ELF binaries and the kernel. If
 
 Adding a *feature* (a new ioctl) does not renumber traps: mirror the new command/struct in **`include/ioctl_abi.h`** instead, and wrap it in the matching `src/*.c`.
 
-**Ecosystem:** **[CactOS-x86_32](https://github.com/QwaYer/CactOS-x86_32)** (integrator) · **CactKernel** · **CactLib** · **Cactsole** · **Cgoct** · **LocalRepoCactOS** (`cctkfs.img` packer).
+**Ecosystem:** **[CactOS-x86_32](https://github.com/QwaYer/CactOS-x86_32)** (integrator) · **CactKernel** · **CactLib** · **Cactsole** · **Cgoct** · **LocalRepoCactOS** (`localbinrepo.img` packer).
 
 ---
 
