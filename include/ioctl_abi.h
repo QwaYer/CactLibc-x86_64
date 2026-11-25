@@ -797,6 +797,8 @@ typedef struct cact_module_arg { char *path; uint32_t vendor_id; uint32_t device
 #define CACT_ZMEM_ZSWAP_SET    0x4201  // arg=cact_zmem_zswap_t*: on (limit+level+writeback) or off
 #define CACT_ZMEM_ZRAM_CREATE  0x4202  // arg=cact_zmem_zram_create_t*: creates a ready /dev/<name>
 #define CACT_ZMEM_ZRAM_DESTROY 0x4203  // arg=char* name: refused while the device backs swap
+#define CACT_ZMEM_SWAP_ATTACH  0x4204  // arg=char* dev ("zram0" or "/dev/zram0"): use it as swap
+#define CACT_ZMEM_SWAP_DETACH  0x4205  // arg=char* dev: stop using it (EBUSY while pages are out)
 
 typedef struct cact_zmem_zswap {
     uint32_t enabled;         // 0 = off (stop accepting pages), 1 = on
