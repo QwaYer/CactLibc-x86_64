@@ -121,20 +121,51 @@ int fclose(FILE *stream) {
 }
 
 size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream) {
+    if (size == 0 || nmemb == 0) return 0;
+
     size_t total = size * nmemb;
-    if (total == 0) return 0;
-    ssize_t r = read(stream->fd, ptr, total);
-    if (r < 0) { stream->flags |= F_ERR; return 0; }
-    if (r == 0) { stream->flags |= F_EOF; return 0; }
-    return (r / size);
+    size_t got = 0;
+    unsigned char *p = ptr;
+
+    /* A read() shorter than asked is not EOF — a device, pipe or socket may
+     * hand back any amount.  Keep reading until the request is filled or a
+     * real EOF/error shows up, otherwise a caller that fills a buffer and
+     * checks feof() sees a short count with no EOF (zstd: "Unexpected short
+     * read" when streaming a /dev module node). */
+    while (got < total) {
+        ssize_t r = read(stream->fd, p + got, total - got);
+        if (r < 0) {
+            if (errno == EINTR) continue;
+            stream->flags |= F_ERR;
+            break;
+        }
+        if (r == 0) { stream->flags |= F_EOF; break; }
+        got += (size_t)r;
+    }
+    return got / size;
 }
 
 size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) {
+    if (size == 0 || nmemb == 0) return 0;
+
     size_t total = size * nmemb;
-    if (total == 0) return 0;
-    ssize_t w = write(stream->fd, ptr, total);
-    if (w < 0) { stream->flags |= F_ERR; return 0; }
-    return (w / size);
+    size_t put = 0;
+    const unsigned char *p = ptr;
+
+    /* Same as fread(): a write() shorter than asked is legal (a pipe fills up),
+     * so keep writing until everything is out or a real error shows up — a
+     * single write() would silently drop the tail. */
+    while (put < total) {
+        ssize_t w = write(stream->fd, p + put, total - put);
+        if (w < 0) {
+            if (errno == EINTR) continue;
+            stream->flags |= F_ERR;
+            break;
+        }
+        if (w == 0) { stream->flags |= F_ERR; break; }
+        put += (size_t)w;
+    }
+    return put / size;
 }
 
 int fseek(FILE *stream, long offset, int whence) {
