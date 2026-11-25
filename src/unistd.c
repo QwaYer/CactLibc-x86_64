@@ -649,11 +649,16 @@ int execvp(const char *file, char *const argv[]) {
 }
 
 int isatty(int fd) {
-    /* TIOCGWINSZ is answered by the kernel only for terminal nodes. */
+    /* TIOCGWINSZ is answered by the kernel only for terminal nodes (the tty
+     * driver); everything else — a pipe, a regular file, a boot-module device
+     * such as /dev/drvrepo — returns -ENOTTY, so this is a real test and not
+     * "any fd looks like a console". */
     struct winsize ws;
     struct winsize *p = &ws;
     int r = nio_ioctl(fd, TIOCGWINSZ, p);
-    return (r >= 0) ? 1 : 0;
+    if (r >= 0) return 1;
+    errno = ENOTTY;
+    return 0;
 }
 
 int ppoll(struct pollfd *fds, nfds_t nfds, const struct timespec *timeout_ts,
